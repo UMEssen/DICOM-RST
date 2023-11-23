@@ -15,13 +15,13 @@ readme = "README.md"
 dicom = "0.6.3"
 # Serialization
 serde = { version = "1.0.193", features = ["derive"] }
-# Reading TOML configuration files
-toml = "0.8.8"
 # Logging
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 # Convenient derive macro for errors
 thiserror = "1.0.50"
+config = { version = "0.13.4", features = ["toml"] }
+anyhow = "1.0.75"
 
 [lints.rust]
 unsafe_code = "forbid"
