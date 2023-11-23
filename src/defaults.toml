@@ -1,0 +1,14 @@
+[logging]
+level = "info"
+
+[http]
+interface = "127.0.0.1"
+port = 8080
+
+[dicom]
+
+[dicom.pacs]
+
+# Example:
+# [dicom.pacs."ORTHANC"]
+# address = "127.0.0.1:4242"

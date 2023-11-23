@@ -1,38 +1,55 @@
-use std::sync::OnceLock;
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use serde::Deserialize;
+use std::{collections::HashMap, sync::OnceLock};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ApplicationConfig {
+    pub logging: LoggingConfig,
+
     pub http: HttpConfig,
-    #[serde(rename = "dicomweb")]
     pub dicom: DicomConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpConfig {
-    pub port: u16,
-}
+impl ApplicationConfig {
+    pub fn new() -> Result<Self, config::ConfigError> {
+        use config::Config;
+        let s = Config::builder()
+            .add_source(config::File::from_str(
+                include_str!("defaults.toml"),
+                config::FileFormat::Toml,
+            ))
+            .add_source(config::File::with_name("config.toml").required(false))
+            .add_source(config::Environment::with_prefix("DICOM_RST").separator("_"))
+            .build()?;
 
-impl Default for HttpConfig {
-    fn default() -> Self {
-        Self {
-            port: 8080
-        }
+        s.try_deserialize()
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct DicomConfig {
-    /// A list of PACS that are available to the DICOMweb adapter.
-    pub pacs: Vec<PacsConfig>,
+#[derive(Debug, Deserialize)]
+pub struct LoggingConfig {
+    // Configurable logging level. Also configurable via env vars RUST_LOG and DICOM_RST_LOGGING_LEVEL
+    pub level: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
+pub struct HttpConfig {
+    // The interface the dicom-web server will be listening on
+    pub interface: String,
+    // The port for the dicom-web server
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DicomConfig {
+    /// A list of PACS that are available to the DICOMweb adapter.
+    pub pacs: HashMap<Aet, PacsConfig>,
+}
+
+/// The application entity title of the PACS
+type Aet = String;
+
+#[derive(Debug, Deserialize)]
 pub struct PacsConfig {
-    /// The application entity title of the PACS
-    pub aet: String,
     /// The network address of the PACS (host:port)
     pub address: String,
 }
@@ -40,30 +57,7 @@ pub struct PacsConfig {
 pub fn application_config() -> &'static ApplicationConfig {
     static APP_CONFIG: OnceLock<ApplicationConfig> = OnceLock::new();
     APP_CONFIG.get_or_init(|| {
-        match read_config_file() {
-            Ok(config) => {
-                info!("Loaded application configuration from config.toml");
-                debug!("{:?}", config);
-                config
-            }
-            Err(err) => {
-                warn!("Failed to read config file: {:?}. Falling back to default configuration", err);
-                ApplicationConfig::default()
-            }
-        }
+        ApplicationConfig::new()
+            .unwrap_or_else(|e| panic!("Faile to load ApplicationConfig: {e:?}"))
     })
-}
-
-fn read_config_file() -> Result<ApplicationConfig, ConfigError> {
-    let config_file = std::fs::read_to_string("config.toml")?;
-    let app_config: ApplicationConfig = toml::from_str(&config_file)?;
-    Ok(app_config)
-}
-
-#[derive(Debug, Error)]
-pub enum ConfigError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Failed to deserialize config: {0}")]
-    Deserialization(#[from] toml::de::Error),
 }
