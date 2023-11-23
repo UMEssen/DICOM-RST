@@ -1,5 +1,5 @@
 [package]
-name = "dicomweb-adapter"
+name = "dicom-rst"
 version = "0.1.0-beta"
 description = "A blazingly fast DICOMweb implementation"
 edition = "2021"
