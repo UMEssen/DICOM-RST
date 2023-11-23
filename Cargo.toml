@@ -1,0 +1,33 @@
+[package]
+name = "dicomweb-adapter"
+version = "0.1.0-beta"
+description = "A blazingly fast DICOMweb implementation"
+edition = "2021"
+rust-version = "1.74.0"
+categories = ["multimedia"]
+keywords = ["dicom", "dicomweb", "healthcare"]
+repository = "https://gitlab.ume.de/ship/dicom-rst"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# DICOM processing
+dicom = "0.6.3"
+# Serialization
+serde = { version = "1.0.193", features = ["derive"] }
+# Reading TOML configuration files
+toml = "0.8.8"
+# Logging
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+# Convenient derive macro for errors
+thiserror = "1.0.50"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = "warn"
+nursery = "warn"
+cargo = "warn"
+module_name_repetitions = "allow"
