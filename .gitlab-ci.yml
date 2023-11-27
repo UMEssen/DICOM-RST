@@ -1,0 +1,7 @@
+include:
+  - project: 'SHIP/ci'
+    ref: master
+    file: '/app-ci.yml'
+
+variables:
+  ARGO_EXCLUSIVE: "true"
