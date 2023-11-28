@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::{collections::HashMap, sync::OnceLock};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ApplicationConfig {
     pub logging: LoggingConfig,
 
@@ -25,13 +25,13 @@ impl ApplicationConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct LoggingConfig {
     // Configurable logging level. Also configurable via env vars RUST_LOG and DICOM_RST_LOGGING_LEVEL
     pub level: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct HttpConfig {
     // The interface the dicom-web server will be listening on
     pub interface: String,
@@ -39,19 +39,23 @@ pub struct HttpConfig {
     pub port: u16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DicomConfig {
+    /// The application entity title for the DICOMweb adapter node.
+    pub aet: String,
     /// A list of PACS that are available to the DICOMweb adapter.
     pub pacs: HashMap<Aet, PacsConfig>,
 }
 
 /// The application entity title of the PACS
-type Aet = String;
+pub type Aet = String;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PacsConfig {
     /// The network address of the PACS (host:port)
     pub address: String,
+    /// The maximum permitted amount of connections in the pool
+    pub max_pool_size: usize,
 }
 
 pub fn application_config() -> &'static ApplicationConfig {
