@@ -23,3 +23,6 @@ Cargo.lock
 
 # Fleet
 .fleet/
+
+# Avoid adding config files that overwrite the default config
+config.toml
