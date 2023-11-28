@@ -6,23 +6,24 @@ use axum::{
 };
 use serde::Deserialize;
 
-pub fn routes() -> axum::Router {
+pub fn routes() -> axum::Router<AppState> {
     use axum::routing::*;
 
     Router::new()
         // https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.6.html#sect_10.6.1.1
-        .route("/studies", get(studies))
-        .route("/studies/:study/series", get(study_series))
-        .route("/studies/:study/instances", get(study_instances))
-        .route("/series", get(series))
+        .route("/pacs/:aet/studies", get(studies))
+        .route("/pacs/:aet/studies/:study/series", get(study_series))
+        .route("/pacs/:aet/studies/:study/instances", get(study_instances))
+        .route("/pacs/:aet/series", get(series))
         .route(
-            "/studies/:study/series/:series/instances",
+            "/pacs/:aet/studies/:study/series/:series/instances",
             get(study_series_instances),
         )
-        .route("/instances", get(instances))
+        .route("/pacs/:aet/instances", get(instances))
 }
 
 pub async fn studies(
+    Path(aet): Path<String>,
     params: Option<Query<Params>>,
     study_params: Query<PatientQueryParams>,
 ) -> impl IntoResponse {
@@ -32,7 +33,7 @@ pub async fn studies(
 }
 
 pub async fn study_series(
-    Path(study): Path<String>,
+    Path((aet, study)): Path<(String, String)>,
     params: Option<Query<Params>>,
     series_params: Query<SeriesQueryParams>,
 ) -> impl IntoResponse {
@@ -42,7 +43,7 @@ pub async fn study_series(
 }
 
 pub async fn study_instances(
-    Path(study): Path<String>,
+    Path((aet, study)): Path<(String, String)>,
     params: Option<Query<Params>>,
     series_params: Query<SeriesQueryParams>,
     instance_params: Query<InstanceQueryParams>,
@@ -53,6 +54,7 @@ pub async fn study_instances(
 }
 
 pub async fn series(
+    Path(aet): Path<String>,
     params: Option<Query<Params>>,
     study_params: Query<PatientQueryParams>,
     series_params: Query<SeriesQueryParams>,
@@ -63,6 +65,7 @@ pub async fn series(
 }
 
 pub async fn instances(
+    Path(aet): Path<String>,
     params: Option<Query<Params>>,
     study_params: Query<PatientQueryParams>,
     series_params: Query<SeriesQueryParams>,
@@ -74,7 +77,7 @@ pub async fn instances(
 }
 
 pub async fn study_series_instances(
-    Path((study, series)): Path<(String, String)>,
+    Path((aet, study, series)): Path<(String, String, String)>,
     params: Option<Query<Params>>,
     instance_params: Query<InstanceQueryParams>,
 ) -> impl IntoResponse {
@@ -83,9 +86,9 @@ pub async fn study_series_instances(
     unimplemented!();
 }
 
+use crate::AppState;
 use dicom::dictionary_std::tags;
 use dicom::{core::DataDictionary, object::StandardDataDictionary};
-use tracing::error;
 
 #[derive(Debug, Deserialize)]
 pub struct Params {
