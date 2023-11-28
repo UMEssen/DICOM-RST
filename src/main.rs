@@ -36,7 +36,7 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let config = config::application_config();
+    let config = config::ApplicationConfig::new()?;
     init_logger(&config.logging.level)?;
 
     let HttpConfig {
@@ -44,7 +44,7 @@ async fn main() -> Result<(), anyhow::Error> {
         port,
     } = config.http;
 
-    let pool = DicomPool::new()?;
+    let pool = DicomPool::new(&config.dicom)?;
     let app_state = AppState { pool };
 
     info!("Starting HTTP server on http://{interface}:{port}",);
