@@ -6,6 +6,8 @@ interface = "127.0.0.1"
 port = 8080
 
 [dicom]
+# The AET of the DICOMweb Adapter. Add this AET to the allowlist of each PACS for authentification.
+aet = "DICOM-RST"
 
 [dicom.pacs]
 
