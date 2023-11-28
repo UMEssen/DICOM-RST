@@ -36,6 +36,7 @@ async-trait = "0.1.74"
 
 [lints.rust]
 unsafe_code = "forbid"
+renamed_and_removed_lints = "allow"
 
 [lints.clippy]
 pedantic = "warn"
