@@ -10,7 +10,6 @@ use deadpool::managed::{
 use dicom::dictionary_std::uids::STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND;
 use dicom::ul::{ClientAssociation, ClientAssociationOptions};
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
 use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
@@ -49,20 +48,6 @@ impl DicomPool {
     #[must_use]
     pub fn available(&self) -> Vec<&Aet> {
         self.0.keys().collect()
-    }
-}
-
-impl Display for DicomPool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut string_builder = String::new();
-        for (aet, obj) in &self.0 {
-            string_builder.push_str(&format!(
-                "aet={}, max_pool_size={}",
-                aet,
-                obj.manager().pacs.max_pool_size
-            ));
-        }
-        write!(f, "{string_builder}")
     }
 }
 
