@@ -85,7 +85,8 @@ impl deadpool::managed::Manager for DicomManager {
         let config = application_config();
         let options = ClientAssociationOptions::new()
             .with_abstract_syntax(STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND)
-            .calling_ae_title(&config.dicom.aet);
+            .calling_ae_title(&config.dicom.aet)
+            .called_ae_title(&self.aet);
         let association = options.establish_with(self.config.address.as_str())?;
         Ok(association)
     }
