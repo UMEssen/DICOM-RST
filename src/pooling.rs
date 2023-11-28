@@ -1,4 +1,4 @@
-use crate::config::{application_config, Aet, PacsConfig};
+use crate::config::{Aet, DicomConfig, PacsConfig};
 use crate::dimse::cecho::{CEchoRq, CEchoRsp};
 use crate::dimse::{
     prepare_pdu_data, read_pdu_data, DicomError, FromDicomObject, IntoDicomObject, StatusType,
@@ -20,17 +20,17 @@ impl DicomPool {
     /// Creates a new [`DicomPool`] that contains a managed connection pool for each configured PACS.
     /// # Errors
     /// Returns a [`BuildError`] if it was not possible to create the pool.
-    pub fn new() -> Result<Self, BuildError> {
-        let configured_pacs = &application_config().dicom.pacs;
-        let mut pools = HashMap::with_capacity(configured_pacs.len());
+    pub fn new(dicom_config: &DicomConfig) -> Result<Self, BuildError> {
+        let mut pools = HashMap::with_capacity(dicom_config.pacs.len());
 
-        for (aet, config) in configured_pacs {
+        for (aet, pacs_config) in &dicom_config.pacs {
             let mgr = DicomManager {
                 aet: aet.clone(),
-                config: config.clone(),
+                pacs: pacs_config.clone(),
+                calling_ae_title: dicom_config.aet.clone(),
             };
             let pool = Pool::builder(mgr)
-                .max_size(config.max_pool_size)
+                .max_size(pacs_config.max_pool_size)
                 .queue_mode(QueueMode::Fifo)
                 .build()?;
             pools.insert(aet.clone(), pool);
@@ -59,7 +59,7 @@ impl Display for DicomPool {
             string_builder.push_str(&format!(
                 "aet={}, max_pool_size={}",
                 aet,
-                obj.manager().config.max_pool_size
+                obj.manager().pacs.max_pool_size
             ));
         }
         write!(f, "{string_builder}")
@@ -68,8 +68,9 @@ impl Display for DicomPool {
 
 #[derive(Debug, Clone)]
 pub struct DicomManager {
-    pub aet: Aet,
-    pub config: PacsConfig,
+    aet: Aet,
+    pacs: PacsConfig,
+    calling_ae_title: String,
 }
 
 #[async_trait]
@@ -80,14 +81,13 @@ impl deadpool::managed::Manager for DicomManager {
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         info!(
             "Establishing new client association for {} ({})",
-            self.aet, self.config.address
+            self.aet, self.pacs.address
         );
-        let config = application_config();
         let options = ClientAssociationOptions::new()
             .with_abstract_syntax(STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND)
-            .calling_ae_title(&config.dicom.aet)
+            .calling_ae_title(&self.calling_ae_title)
             .called_ae_title(&self.aet);
-        let association = options.establish_with(self.config.address.as_str())?;
+        let association = options.establish_with(&self.pacs.address)?;
         Ok(association)
     }
 
@@ -98,7 +98,7 @@ impl deadpool::managed::Manager for DicomManager {
     ) -> RecycleResult<Self::Error> {
         info!(
             "Recycling client association for {} ({})",
-            self.aet, self.config.address
+            self.aet, self.pacs.address
         );
         let c_echo_rq = CEchoRq::default()
             .into_dicom_object()
@@ -126,7 +126,7 @@ impl deadpool::managed::Manager for DicomManager {
             status => {
                 warn!(
                     "Failed to recycle client association for {} ({}). C-ECHO-RQ returned {:?}",
-                    self.aet, self.config.address, status
+                    self.aet, self.pacs.address, status
                 );
                 Err(RecycleError::Message(
                     format!("C-ECHO returned {status:?}",),

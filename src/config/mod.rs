@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::{collections::HashMap, sync::OnceLock};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApplicationConfig {
@@ -56,12 +56,4 @@ pub struct PacsConfig {
     pub address: String,
     /// The maximum permitted amount of connections in the pool
     pub max_pool_size: usize,
-}
-
-pub fn application_config() -> &'static ApplicationConfig {
-    static APP_CONFIG: OnceLock<ApplicationConfig> = OnceLock::new();
-    APP_CONFIG.get_or_init(|| {
-        ApplicationConfig::new()
-            .unwrap_or_else(|e| panic!("Faile to load ApplicationConfig: {e:?}"))
-    })
 }
