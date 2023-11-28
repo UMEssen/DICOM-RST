@@ -1,16 +1,18 @@
-mod config;
-mod qido;
-mod wado;
-
-use std::str::FromStr;
-
-use tracing::{debug, info, level_filters::LevelFilter};
-use tracing_subscriber::EnvFilter;
+pub mod api;
+pub mod config;
+pub mod dimse;
+pub mod pooling;
 
 use crate::config::HttpConfig;
+use crate::pooling::DicomPool;
+
+use std::str::FromStr;
+use tokio::net::TcpListener;
+use tracing::{info, level_filters::LevelFilter};
+use tracing_subscriber::EnvFilter;
 
 fn init_logger(level: &str) -> Result<(), anyhow::Error> {
-    let log_level: tracing::Level = tracing::Level::from_str(&level)?;
+    let log_level: tracing::Level = tracing::Level::from_str(level)?;
 
     let subscriber = tracing_subscriber::fmt()
         .compact()
@@ -27,34 +29,57 @@ fn init_logger(level: &str) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: DicomPool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let config = config::application_config();
     init_logger(&config.logging.level)?;
-
-    debug!("Config: {config:?}");
 
     let HttpConfig {
         ref interface,
         port,
     } = config.http;
 
-    info!("Starting HTTP server on http://{interface}:{port}",);
+    let pool = DicomPool::new()?;
+    let app_state = AppState { pool };
 
-    use tokio::net::*;
+    info!("Starting HTTP server on http://{interface}:{port}",);
 
     // build our application with a route
     let routes = {
-        use axum::routing::*;
-        Router::new().merge(qido::routes()).merge(wado::routes())
+        axum::routing::Router::new()
+            .merge(api::qido::routes())
+            .merge(api::wado::routes())
+            .merge(api::common::routes())
     };
 
-    let app = routes.layer(tower_http::trace::TraceLayer::new_for_http());
+    let app = routes
+        .layer(axum::middleware::from_fn(add_common_headers))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .with_state(app_state);
 
-    let listener = TcpListener::bind((&interface[..], port)).await?;
+    let listener = TcpListener::bind((interface.as_str(), port)).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+async fn add_common_headers(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut response = next.run(req).await;
+    // It's nice to have a custom Server header with the crate version
+    let product = format!("DICOM-RST/{}", env!("CARGO_PKG_VERSION"));
+    response.headers_mut().insert(
+        "Server",
+        axum::http::HeaderValue::from_str(&product).unwrap(),
+    );
+    response
 }
 
 // use http_body_util::StreamBody;
