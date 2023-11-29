@@ -15,4 +15,4 @@ aet = "DICOM-RST"
 # [dicom.pacs."ORTHANC"]
 # address = "127.0.0.1:4242"
 # max_pool_size = 1
-# connect_timeout_seconds = 10
+# pool_acquire_seconds = 10

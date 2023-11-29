@@ -1,13 +1,7 @@
 use std::{net::TcpStream, thread, time::Duration};
 
-use dicom::{
-    object::AtAccessError,
-    ul::{
-        address, association, pdu::PresentationContextResult, ClientAssociation,
-        ClientAssociationOptions, Pdu,
-    },
-};
-use tracing::debug;
+use dicom::ul::{pdu::PresentationContextResult, ClientAssociationOptions, Pdu};
+use tracing::{debug, error, warn};
 
 use crate::dimse::{self, DicomError};
 
@@ -18,9 +12,12 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Backend closed")]
-    Closed,
+    ChannelClosed,
+    #[error("Timeout")]
+    Timeout,
 }
 
+#[derive(Debug)]
 enum Command {
     Send(Pdu, tokio::sync::oneshot::Sender<Result<(), DicomError>>),
     Receive(tokio::sync::oneshot::Sender<Result<Pdu, DicomError>>),
@@ -28,7 +25,7 @@ enum Command {
 
 #[derive(Debug)]
 pub struct DicomConnection {
-    handle: thread::JoinHandle<Result<(), ()>>,
+    backend_uuid: uuid::Uuid,
     channel: tokio::sync::mpsc::Sender<Command>,
     presentation_contexts: Vec<PresentationContextResult>,
     tcp_stream: TcpStream,
@@ -36,6 +33,7 @@ pub struct DicomConnection {
 
 impl DicomConnection {
     pub async fn new(
+        uuid: uuid::Uuid,
         address: &str,
         aet: &str,
         calling_ae_title: &str,
@@ -51,8 +49,10 @@ impl DicomConnection {
         let (connect_tx, connect_result) = tokio::sync::oneshot::channel::<Result<_, DicomError>>();
 
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Command>(1);
+        let _handle = thread::Builder::new().name(aet.to_owned()).spawn(move || {
+            let span = tracing::info_span!("backend", backend_uuid = uuid.to_string());
+            let _enter = span.enter();
 
-        let handle = thread::Builder::new().name(aet.to_owned()).spawn(move || {
             let mut association = match options.establish_with(&address) {
                 Ok(mut association) => {
                     let pcs = association
@@ -76,17 +76,30 @@ impl DicomConnection {
             };
 
             while let Some(command) = rx.blocking_recv() {
-                match command {
+                debug!("{command:?}");
+
+                let result = match command {
                     Command::Send(pdu, response) => {
+                        let send_result = association.send(&pdu).map_err(|e| e.into());
                         response
-                            .send(association.send(&pdu).map_err(|e| e.into()))
-                            .map_err(|_value| ())?;
+                            .send(send_result)
+                            .map_err(|_value| Error::ChannelClosed)
                     }
                     Command::Receive(response) => {
+                        // if rand::random::<bool>() {
+                        //     warn!("Intentially blocking thread for debugging...");
+                        //     std::thread::sleep(Duration::from_secs(6));
+                        // }
+
                         response
                             .send(association.receive().map_err(|e| e.into()))
-                            .map_err(|_value| ())?;
+                            .map_err(|_value| Error::ChannelClosed)
                     }
+                };
+
+                if let Some(err) = result.err() {
+                    error!("Error in DicomConnection backend: {err:?}");
+                    return Err(());
                 }
             }
 
@@ -100,7 +113,7 @@ impl DicomConnection {
             connect_result.await.expect("connect_result.await")?;
 
         Ok(Self {
-            handle,
+            backend_uuid: uuid,
             channel: tx,
             presentation_contexts,
             tcp_stream,
@@ -109,58 +122,73 @@ impl DicomConnection {
 }
 
 impl DicomConnection {
+    pub fn uuid(&self) -> &uuid::Uuid {
+        &self.backend_uuid
+    }
+
     pub fn presentation_contexts(&self) -> &[PresentationContextResult] {
         &self.presentation_contexts
     }
 
-    pub async fn send(&mut self, pdu: Pdu) -> Result<(), Error> {
+    pub async fn send(&mut self, pdu: Pdu, timeout: Duration) -> Result<(), Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.channel
-            .send(Command::Send(pdu, tx))
-            .await
-            .map_err(|_e| Error::Closed)?;
 
-        rx.await.map_err(|_e| Error::Closed)?.map_err(Error::Dicom)
+        let result = tokio::time::timeout(timeout, async {
+            self.channel
+                .send(Command::Send(pdu, tx))
+                .await
+                .map_err(|_| Error::ChannelClosed)?;
+
+            rx.await
+                .map_err(|_e| Error::ChannelClosed)?
+                .map_err(Error::Dicom)
+        })
+        .await
+        .map_err(|_| Error::Timeout)
+        .and_then(|r| r);
+
+        if let Err(ref err) = result {
+            error!("Error in DicomConnection::send: {err:?}",);
+        }
+
+        result
     }
 
-    pub async fn receive(&mut self) -> Result<Pdu, Error> {
+    pub async fn receive(&mut self, timeout: Duration) -> Result<Pdu, Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.channel
-            .send(Command::Receive(tx))
-            .await
-            .map_err(|_e| Error::Closed)?;
 
-        rx.await.map_err(|_e| Error::Closed)?.map_err(Error::Dicom)
+        let result = tokio::time::timeout(timeout, async {
+            self.channel
+                .send(Command::Receive(tx))
+                .await
+                .map_err(|_| Error::ChannelClosed)?;
+
+            rx.await
+                .map_err(|_e| Error::ChannelClosed)?
+                .map_err(Error::Dicom)
+        })
+        .await
+        .map_err(|_| Error::Timeout)
+        .and_then(|r| r);
+
+        if let Err(ref err) = result {
+            error!("Error in DicomConnection::receive: {err}",);
+        }
+
+        result
     }
 
-    pub fn close(self) {
+    pub fn close(&mut self) {
+        debug!(
+            backend_uuid = self.backend_uuid.to_string(),
+            "Closing TcpStream from outside"
+        );
         self.tcp_stream.shutdown(std::net::Shutdown::Both).unwrap();
-        let _thread_result = self.handle.join().unwrap();
     }
 }
 
-// trait State {}
-
-// #[derive(Debug)]
-// struct Disconnected;
-// struct Connected(ClientAssociation);
-
-// #[derive(Debug)]
-// struct BlockingDicomConnection<State> {
-//     state: State,
-// }
-
-// impl BlockingDicomConnection<Disconnected> {
-//     pub fn connect(
-//         addr: &str,
-//         options: ClientAssociationOptions<'_>,
-//     ) -> Result<BlockingDicomConnection<Connected>, DicomError> {
-//         todo!()
-//     }
-// }
-
-// impl BlockingDicomConnection<Connected> {
-//     pub fn send(&mut self, pdu: Pdu) -> Result<(), DicomError> {
-//         todo!()
-//     }
-// }
+impl Drop for DicomConnection {
+    fn drop(&mut self) {
+        self.close()
+    }
+}

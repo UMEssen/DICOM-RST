@@ -34,6 +34,7 @@ tower-http = { version = "0.5.0", features = ["trace"] }
 deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
 async-trait = "0.1.74"
 rand = "0.8.5"
+uuid = { version = "1.6.1", features = ["v4"] }
 
 [lints.rust]
 unsafe_code = "forbid"
