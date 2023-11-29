@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ApplicationConfig {
@@ -56,4 +56,7 @@ pub struct PacsConfig {
     pub address: String,
     /// The maximum permitted amount of connections in the pool
     pub max_pool_size: usize,
+    /// The maximum duration the pool waits for a C-ECHO response when opening a
+    /// new connection
+    pub connect_timeout_seconds: u64,
 }
