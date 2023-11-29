@@ -14,9 +14,9 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
-pub struct DicomPool(HashMap<Aet, Pool<DicomManager>>);
+pub struct DicomPools(HashMap<Aet, Pool<DicomConnectionPool>>);
 
-impl DicomPool {
+impl DicomPools {
     /// Creates a new [`DicomPool`] that contains a managed connection pool for each configured PACS.
     /// # Errors
     /// Returns a [`BuildError`] if it was not possible to create the pool.
@@ -24,7 +24,7 @@ impl DicomPool {
         let mut pools = HashMap::with_capacity(dicom_config.pacs.len());
 
         for (aet, pacs_config) in &dicom_config.pacs {
-            let mgr = DicomManager {
+            let mgr = DicomConnectionPool {
                 aet: aet.clone(),
                 pacs: pacs_config.clone(),
                 calling_ae_title: dicom_config.aet.clone(),
@@ -51,7 +51,10 @@ impl DicomPool {
 
     #[inline]
     #[must_use]
-    pub fn get(&self, aet: &str) -> Option<&Pool<DicomManager, Object<DicomManager>>> {
+    pub fn get(
+        &self,
+        aet: &str,
+    ) -> Option<&Pool<DicomConnectionPool, Object<DicomConnectionPool>>> {
         self.0.get(aet)
     }
 
@@ -63,14 +66,14 @@ impl DicomPool {
 }
 
 #[derive(Debug, Clone)]
-pub struct DicomManager {
+pub struct DicomConnectionPool {
     aet: Aet,
     pacs: PacsConfig,
     calling_ae_title: String,
 }
 
 #[async_trait]
-impl deadpool::managed::Manager for DicomManager {
+impl deadpool::managed::Manager for DicomConnectionPool {
     type Type = ClientAssociation;
     type Error = DicomError;
 
