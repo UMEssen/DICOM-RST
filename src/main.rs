@@ -4,7 +4,7 @@ pub mod dimse;
 pub mod pool;
 
 use crate::config::HttpConfig;
-use crate::pool::DicomPool;
+use crate::pool::DicomPools;
 
 use std::str::FromStr;
 use tokio::net::TcpListener;
@@ -31,7 +31,7 @@ fn init_logger(level: &str) -> Result<(), anyhow::Error> {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: DicomPool,
+    pub pool: DicomPools,
 }
 
 #[tokio::main]
@@ -44,7 +44,7 @@ async fn main() -> Result<(), anyhow::Error> {
         port,
     } = config.http;
 
-    let pool = DicomPool::new(&config.dicom)?;
+    let pool = DicomPools::new(&config.dicom)?;
     let app_state = AppState { pool };
 
     info!("Starting HTTP server on http://{interface}:{port}",);
