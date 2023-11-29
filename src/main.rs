@@ -1,10 +1,10 @@
 pub mod api;
 pub mod config;
 pub mod dimse;
-pub mod pooling;
+pub mod pool;
 
 use crate::config::HttpConfig;
-use crate::pooling::DicomPool;
+use crate::pool::DicomPool;
 
 use std::str::FromStr;
 use tokio::net::TcpListener;

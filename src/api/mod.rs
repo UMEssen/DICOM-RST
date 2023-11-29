@@ -20,7 +20,7 @@ pub fn routes() -> Router<AppState> {
 /// DICOM-RST specific route that returns a list of available PACS that can be used for
 /// communication via DICOMweb.
 pub async fn all_pacs(State(state): State<AppState>) -> impl IntoResponse {
-    let pacs = state.pool.available();
+    let pacs = state.pool.aets();
 
     Json(serde_json::Value::Array(
         pacs.into_iter()
