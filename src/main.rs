@@ -49,15 +49,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     info!("Starting HTTP server on http://{interface}:{port}",);
 
-    // build our application with a route
-    let routes = {
-        axum::routing::Router::new()
-            .merge(api::qido::routes())
-            .merge(api::wado::routes())
-            .merge(api::common::routes())
-    };
-
-    let app = routes
+    let app = api::routes()
         .layer(axum::middleware::from_fn(add_common_headers))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app_state);

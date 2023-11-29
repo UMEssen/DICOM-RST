@@ -14,3 +14,4 @@ aet = "DICOM-RST"
 # Example:
 # [dicom.pacs."ORTHANC"]
 # address = "127.0.0.1:4242"
+# max_pool_size = 1
