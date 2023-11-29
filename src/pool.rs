@@ -87,23 +87,28 @@ impl deadpool::managed::Manager for DicomManager {
 
         let address = self.pacs.address.clone();
 
-        tokio::task::spawn_blocking(move || {
-            let association = options.establish_with(&address)?;
-            Ok(association)
-        })
-        .await
-        .expect("tokio::task::spawn_blocking")
+        tokio::task::spawn_blocking(move || Ok(options.establish_with(&address)?))
+            .await
+            .expect("tokio::task::spawn_blocking")
     }
 
     async fn recycle(
         &self,
         client: &mut Self::Type,
-        _metrics: &Metrics,
+        metrics: &Metrics,
     ) -> RecycleResult<Self::Error> {
         info!(
-            "Recycling client association for {} ({})",
-            self.aet, self.pacs.address
+            "Recycling client association for {} ({}, age={:?} last_used={:?})",
+            self.aet,
+            self.pacs.address,
+            metrics.age(),
+            metrics.last_used()
         );
+
+        // if  rand::random::<bool>() {
+        //     warn!("Intentially returning Err from recycle()");
+        //     return Err(RecycleError::Message(format!("Random")));
+        // }
 
         let c_echo_rq = CEchoRq::default()
             .into_dicom_object()
@@ -132,6 +137,7 @@ impl deadpool::managed::Manager for DicomManager {
         let c_echo_rsp = CEchoRsp::from_dicom_object(&response_object)?;
 
         debug!("C-ECHO-RQ returned {:?}", c_echo_rsp.status_type);
+
         match c_echo_rsp.status_type {
             StatusType::Success => Ok(()),
             status => {
