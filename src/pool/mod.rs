@@ -8,10 +8,13 @@ use deadpool::managed::{
     BuildError, Metrics, Object, Pool, QueueMode, RecycleError, RecycleResult,
 };
 use dicom::dictionary_std::uids::STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND;
-use dicom::ul::{ClientAssociation, ClientAssociationOptions};
+use dicom::ul::ClientAssociationOptions;
 use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{debug, info, warn};
+
+mod connection;
+pub use self::connection::DicomConnection;
 
 #[derive(Debug, Clone)]
 pub struct DicomPools(HashMap<Aet, Pool<DicomConnectionPool>>);
@@ -74,8 +77,8 @@ pub struct DicomConnectionPool {
 
 #[async_trait]
 impl deadpool::managed::Manager for DicomConnectionPool {
-    type Type = ClientAssociation;
-    type Error = DicomError;
+    type Type = DicomConnection;
+    type Error = connection::Error;
 
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         info!(
@@ -83,16 +86,24 @@ impl deadpool::managed::Manager for DicomConnectionPool {
             self.aet, self.pacs.address
         );
 
-        let options = ClientAssociationOptions::new()
-            .with_abstract_syntax(STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND)
-            .calling_ae_title(self.calling_ae_title.clone())
-            .called_ae_title(self.aet.clone());
+        // let options = ClientAssociationOptions::new()
+        //     .with_abstract_syntax(STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND)
+        //     .calling_ae_title(self.calling_ae_title.clone())
+        //     .called_ae_title(self.aet.clone());
 
-        let address = self.pacs.address.clone();
+        // let address = self.pacs.address.clone();
 
-        tokio::task::spawn_blocking(move || Ok(options.establish_with(&address)?))
-            .await
-            .expect("tokio::task::spawn_blocking")
+        // tokio::task::spawn_blocking(move || Ok(options.establish_with(&address)?))
+        //     .await
+        //     .expect("tokio::task::spawn_blocking")
+
+        DicomConnection::new(
+            &self.pacs.address,
+            &self.aet,
+            &self.calling_ae_title,
+            &STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND,
+        )
+        .await
     }
 
     async fn recycle(
@@ -117,27 +128,46 @@ impl deadpool::managed::Manager for DicomConnectionPool {
             .into_dicom_object()
             .map_err(|err| RecycleError::Message(format!("Failed to create C-ECHO-RQ: {err}")))?;
 
-        let response = tokio::task::block_in_place(|| {
-            let pctx =
-                client
-                    .presentation_contexts()
-                    .first()
-                    .ok_or(RecycleError::StaticMessage(
-                        "Failed to get presentation context",
-                    ))?;
+        let pctx = client
+            .presentation_contexts()
+            .first()
+            .ok_or(RecycleError::StaticMessage(
+                "Failed to get presentation context",
+            ))?;
 
-            client
-                .send(&prepare_pdu_data(&c_echo_rq, pctx.id))
-                .map_err(|err| RecycleError::Message(format!("Failed to send C-ECHO-RQ: {err}")))?;
-            let response = client.receive().map_err(|err| {
-                RecycleError::Message(format!("Failed to receive C-ECHO-RSP: {err}"))
-            })?;
+        client
+            .send(prepare_pdu_data(&c_echo_rq, pctx.id))
+            .await
+            .map_err(|err| RecycleError::Message(format!("Failed to send C-ECHO-RQ: {err}")))?;
 
-            Result::<_, RecycleError<Self::Error>>::Ok(response)
-        })?;
+        let response = client
+            .receive()
+            .await
+            .map_err(|err| RecycleError::Message(format!("Failed to receive C-ECHO-RSP: {err}")))?;
 
-        let response_object = read_pdu_data(&response)?;
-        let c_echo_rsp = CEchoRsp::from_dicom_object(&response_object)?;
+        // let response = tokio::task::block_in_place(|| {
+        //     let pctx =
+        //         client
+        //             .presentation_contexts()
+        //             .first()
+        //             .ok_or(RecycleError::StaticMessage(
+        //                 "Failed to get presentation context",
+        //             ))?;
+
+        //     client
+        //         .send(&prepare_pdu_data(&c_echo_rq, pctx.id))
+        //         .map_err(|err| RecycleError::Message(format!("Failed to send C-ECHO-RQ: {err}")))?;
+        //     let response = client.receive().map_err(|err| {
+        //         RecycleError::Message(format!("Failed to receive C-ECHO-RSP: {err}"))
+        //     })?;
+
+        //     Result::<_, RecycleError<Self::Error>>::Ok(response)
+        // })?;
+
+        let response_object = read_pdu_data(&response).map_err(connection::Error::Dicom)?;
+
+        let c_echo_rsp =
+            CEchoRsp::from_dicom_object(&response_object).map_err(connection::Error::Dicom)?;
 
         debug!("C-ECHO-RQ returned {:?}", c_echo_rsp.status_type);
 
