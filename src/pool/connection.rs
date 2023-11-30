@@ -104,7 +104,9 @@ impl DicomConnection {
             }
 
             rx.close();
-            association.abort().unwrap();
+            if let Err(e) = association.abort() {
+                warn!("ClientAssociation.abort() returned error: {e}");
+            }
 
             Ok(())
         })?;
@@ -183,7 +185,10 @@ impl DicomConnection {
             backend_uuid = self.backend_uuid.to_string(),
             "Closing TcpStream from outside"
         );
-        self.tcp_stream.shutdown(std::net::Shutdown::Both).unwrap();
+
+        if let Err(e) = self.tcp_stream.shutdown(std::net::Shutdown::Both) {
+            warn!("TcpStream::shutdown failed: {e}");
+        }
     }
 }
 
