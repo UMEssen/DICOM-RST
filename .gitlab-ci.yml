@@ -5,4 +5,4 @@ include:
 
 variables:
   ARGO_EXCLUSIVE: "true"
-  ARTIFACT_ID: app-dicom-rst
+  ARTIFACT_ID: ship-app-dicom-rst
