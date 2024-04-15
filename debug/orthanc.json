@@ -1,0 +1,21 @@
+{
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": false,
+  "HasWadoRsUniversalTransferSyntax": false,
+  "DicomModalities": {
+    "DICOM-RST": ["DICOM-RST", "host.docker.internal", 7001]
+  },
+  "Plugins": [
+    "/usr/local/share/orthanc/plugins/libOrthancDicomWeb.so",
+    "/usr/local/share/orthanc/plugins/libOrthancExplorer2.so"
+  ],
+  "OrthancExplorer2": {
+    "Enable": true,
+    "IsDefaultOrthancUI": true
+  },
+  "DicomWeb" : {
+    "Servers" : {
+      "DICOM-RST" : [ "http://host.docker.internal:8080/pacs/ORTHANC" ]
+    }
+  }
+}
