@@ -4,11 +4,11 @@
 
 # DICOM-RST
 
-**A robust DICOMweb server with swappable backend**
+**A robust DICOMweb server with interchangeable backends**
 
 Developed as part of the [Open Medical Inference](https://diz.ikim.nrw/en/project/omi/) methodology platform.
 
-[Changelog](./CHANGELOG.md) | [Configuration](./docs/configuration.md) | [DIMSE backend](./docs/dimse.md)
+[Changelog](./CHANGELOG.md) | [Configuration](./docs/configuration.md)
 
 </div>
 

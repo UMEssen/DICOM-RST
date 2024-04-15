@@ -6,7 +6,7 @@ level = "INFO"
 aet = "DICOM-RST"
 
 [server.http]
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 8080
 max-upload-size = 50_000_000 # 50 MB
 request-timeout = 60_000 # 1 minute
