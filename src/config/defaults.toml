@@ -1,18 +1,29 @@
-[logging]
-level = "info"
+[telemetry]
+sentry = ""
+level = "INFO"
 
-[http]
-interface = "127.0.0.1"
-port = 8080
-
-[dicom]
-# The AET of the DICOMweb Adapter. Add this AET to the allowlist of each PACS for authentification.
+[server]
 aet = "DICOM-RST"
 
-[dicom.pacs]
+[server.http]
+host = "127.0.0.1"
+port = 8080
+max-upload-size = 50_000_000 # 50 MB
+request-timeout = 60_000 # 1 minute
 
-# Example:
-# [dicom.pacs."ORTHANC"]
-# address = "127.0.0.1:4242"
-# max_pool_size = 1
-# pool_acquire_seconds = 10
+[[server.dimse]]
+host = "0.0.0.0"
+port = 7001
+aet = "DICOM-RST"
+notify-aets = []
+# notify-aets = ["ORTHANC"]
+
+# [[aets]]
+# aet = "ORTHANC"
+# host = "127.0.0.1"
+# port = 4242
+# backend = "dimse"
+# pool = { size = 16, timeout = 10_000 }
+# qido-rs = { timeout = 10_000 }
+# stow-rs = { timeout = 30_000 }
+# wado-rs = { timeout = 30_000 }
