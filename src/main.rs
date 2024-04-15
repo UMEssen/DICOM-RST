@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run(config: AppConfig) -> anyhow::Result<()> {
 	#[cfg(feature = "dimse")]
-	let move_mediator = Arc::new(RwLock::new(MoveMediator::new()));
+	let move_mediator = Arc::new(RwLock::new(MoveMediator::new(&config)));
 	#[cfg(feature = "dimse")]
 	let pools = AssociationPools::new(&config);
 

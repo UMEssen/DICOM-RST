@@ -44,6 +44,21 @@ pub struct QidoConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct WadoConfig {
 	pub timeout: u64,
+	#[serde(default)]
+	pub mode: RetrieveMode
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RetrieveMode {
+	Concurrent,
+	Sequential
+}
+
+impl Default for RetrieveMode {
+	fn default() -> Self {
+		Self::Concurrent
+	}
 }
 
 #[derive(Debug, Clone, Deserialize)]

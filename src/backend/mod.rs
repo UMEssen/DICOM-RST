@@ -67,6 +67,7 @@ where
 					pool.to_owned(),
 					Arc::clone(&state.move_mediator),
 					Duration::from_millis(ae_config.wado.timeout),
+					ae_config.wado.clone()
 				))),
 				stow: Some(Box::new(DimseStowService::new(
 					pool.to_owned(),

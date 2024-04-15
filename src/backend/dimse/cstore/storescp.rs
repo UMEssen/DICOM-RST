@@ -1,6 +1,6 @@
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::MoveSubOperation;
-use crate::backend::dimse::cmove::{MoveMediator, TaskIdentifier};
+use crate::backend::dimse::cmove::{MoveMediator, TaskKey};
 use crate::backend::dimse::cstore::{
 	CompositeStoreResponse, COMMAND_FIELD_COMPOSITE_STORE_REQUEST,
 };
@@ -16,36 +16,48 @@ use dicom::object::FileMetaTableBuilder;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, info_span, instrument, Instrument};
 
 pub struct StoreServiceClassProvider {
+	inner: Arc<InnerStoreServiceClassProvider>,
+}
+
+struct InnerStoreServiceClassProvider {
 	mediator: Arc<RwLock<MoveMediator>>,
 	config: DimseServerConfig,
 }
 
 impl StoreServiceClassProvider {
 	pub fn new(mediator: Arc<RwLock<MoveMediator>>, config: DimseServerConfig) -> Self {
-		Self { mediator, config }
+		Self {
+			inner: Arc::new(InnerStoreServiceClassProvider { mediator, config }),
+		}
 	}
 
 	#[instrument(skip_all, name = " STORE-SCP")]
 	pub async fn spawn(&self) -> anyhow::Result<()> {
-		let address = SocketAddr::from((self.config.host, self.config.port));
+		let address = SocketAddr::from((self.inner.config.host, self.inner.config.port));
 		let listener = TcpListener::bind(&address).await?;
 		info!("Started Store Service Class Provider on {}", address);
 		loop {
-			if let Err(err) = self.accept(&listener).await {
-				error!("Error occurred while processing request: {}", err);
-			}
+			match listener.accept().await {
+				Ok((stream, peer)) => {
+					info!("Accepted incoming connection from {peer}");
+					let inner = Arc::clone(&self.inner);
+					tokio::spawn(Self::process(stream, inner));
+				}
+				Err(err) => error!("Failed to accept incoming connection: {err}"),
+			};
 		}
 	}
 
-	async fn accept(&self, listener: &TcpListener) -> anyhow::Result<()> {
-		let (tcp_stream, peer) = listener.accept().await?;
-		info!("Accepted new connection from {peer}");
-		let tcp_stream = tcp_stream.into_std()?;
+	async fn process(
+		stream: TcpStream,
+		inner: Arc<InnerStoreServiceClassProvider>,
+	) -> anyhow::Result<()> {
+		let tcp_stream = stream.into_std()?;
 		// This is required because the `dicom-rs` crate does not use non-blocking reads/writes.
 		// The actual reading/writing happens in ServerAssociation, which moves IO operation
 		// to another thread.
@@ -113,8 +125,7 @@ impl StoreServiceClassProvider {
 				.command
 				.get(tags::MOVE_ORIGINATOR_MESSAGE_ID)
 				.map(InMemElement::to_int::<US>)
-				.and_then(Result::ok)
-				.unwrap();
+				.and_then(Result::ok);
 
 			let file = message.data.unwrap().with_exact_meta(
 				FileMetaTableBuilder::new()
@@ -126,11 +137,12 @@ impl StoreServiceClassProvider {
 			);
 
 			let file = Arc::new(file);
-			let mediator = self.mediator.read().await;
+			let mediator = inner.mediator.read().await;
 
-			for aet in &self.config.notify_aets {
-				if let Some(callback) =
-					mediator.get(&TaskIdentifier::new(String::from(aet), move_originator_id))
+			for aet in &inner.config.notify_aets {
+				if let Some(callback) = mediator
+					.get(&TaskKey::new(String::from(aet), move_originator_id))
+					.or_else(|| mediator.get(&TaskKey::new(String::from(aet), None)))
 				{
 					if let Err(err) = callback
 						.send(Ok(MoveSubOperation::Pending(Arc::clone(&file))))

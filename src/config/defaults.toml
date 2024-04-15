@@ -26,4 +26,4 @@ notify-aets = []
 # pool = { size = 16, timeout = 10_000 }
 # qido-rs = { timeout = 10_000 }
 # stow-rs = { timeout = 30_000 }
-# wado-rs = { timeout = 30_000 }
+# wado-rs = { timeout = 30_000, mode = "concurrent" }
