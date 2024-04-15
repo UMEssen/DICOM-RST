@@ -1,47 +1,73 @@
 [package]
 name = "dicom-rst"
-version = "0.1.0-beta"
-description = "A blazingly fast DICOMweb implementation"
+version = "0.1.0-rc.1"
+description = "A robust DICOMweb server with swappable backend"
 edition = "2021"
 rust-version = "1.74.0"
-categories = ["multimedia"]
-keywords = ["dicom", "dicomweb", "healthcare"]
-repository = "https://gitlab.ume.de/ship/dicom-rst"
+categories = ["multimedia", "network-programming", "web-programming::http-server"]
+keywords = ["dicom", "dicomweb", "healthcare", "medical"]
+repository = "https://github.com/UMEssen/DICOM-RST"
 license = "MIT"
 readme = "README.md"
 
+[features]
+default = ["dimse"]
+dimse = []
+s3 = []
+
 [dependencies]
 # DICOM processing
-dicom = "0.6.3"
+dicom = { git = "https://github.com/Enet4/dicom-rs", rev = "6e020ec" }
+dicom-json = { git = "https://github.com/Enet4/dicom-rs", rev = "6e020ec" }
+sentry = { version = "0.32.2", features = ["tracing"] }
+
 # Serialization
-serde = { version = "1.0.193", features = ["derive"] }
-serde_json = "1.0.108"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.115"
 # Logging
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-# Convenient derive macro for errors
-thiserror = "1.0.50"
-config = { version = "0.13.4", features = ["toml"] }
-anyhow = "1.0.75"
-tokio = { version = "1.34.0", features = ["full"] }
-hyper = { version = "1.0.1", features = ["full"] }
-http-body-util = "0.1"
-hyper-util = { version = "0.1", features = ["full"] }
-axum = { version = "0.7.1", features = ["tracing", "tower-log", "json"] }
-futures = "0.3.29"
+# Convenient error handling
+thiserror = "1.0.58"
+anyhow = "1.0.82"
+
+tokio = { version = "1.37.0", features = ["full"] }
+config = { version = "0.14.0", features = ["toml"] }
+hyper = { version = "1.2.0", features = ["full"] }
+http-body = { version = "1.0.0", features = [] }
+http-body-util = "0.1.1"
+hyper-util = { version = "0.1.3", features = ["full"] }
+axum = { version = "0.7.5", features = ["multipart"] }
+axum-macros = "0.4.1"
+axum-extra = { version = "0.9.3", features = ["query"] }
+axum-streams = { version = "0.14.0", features = ["json"] }
+futures = "0.3.30"
 mime = "0.3.17"
-tower-http = { version = "0.5.0", features = ["trace"] }
-deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
-async-trait = "0.1.74"
+tower-http = { version = "0.5.2", features = ["trace", "cors", "timeout"] }
+tower = { version = "0.4.13", features = ["limit"] }
+async-trait = "0.1.80"
+async-stream = "0.3.5"
 rand = "0.8.5"
-uuid = { version = "1.6.1", features = ["v4"] }
+uuid = { version = "1.7.0", features = ["v4"] }
+bytes = "1.6.0"
+multer = "3.0.0"
+clap = { version = "4.5.4", features = ["derive"] }
+pin-project = "1.1.5"
 
 [lints.rust]
 unsafe_code = "forbid"
 renamed_and_removed_lints = "allow"
+async-fn-in-trait = "allow"
 
 [lints.clippy]
 pedantic = "warn"
 nursery = "warn"
 cargo = "warn"
 module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+strip = "debuginfo"
