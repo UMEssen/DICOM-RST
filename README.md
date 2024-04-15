@@ -1,6 +1,6 @@
 <div align="center">
 
-![DICOM-RST Logo](./dicom-rst-icon.png)
+![DICOM-RST Logo[^1]](./dicom-rst-icon.png)
 
 # DICOM-RST
 
