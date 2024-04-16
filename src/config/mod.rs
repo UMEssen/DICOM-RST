@@ -26,11 +26,11 @@ pub struct AeConfig {
 	pub backend: Backend,
 	#[serde(default)]
 	pub pool: PoolConfig,
-	#[serde(rename = "qido-rs")]
+	#[serde(default, rename = "qido-rs")]
 	pub qido: QidoConfig,
-	#[serde(rename = "wado-rs")]
+	#[serde(default, rename = "wado-rs")]
 	pub wado: WadoConfig,
-	#[serde(rename = "stow-rs")]
+	#[serde(default, rename = "stow-rs")]
 	pub stow: StowConfig,
 }
 
@@ -40,19 +40,34 @@ pub struct QidoConfig {
 	pub timeout: u64,
 }
 
+impl Default for QidoConfig {
+	fn default() -> Self {
+		Self { timeout: 30_000 }
+	}
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct WadoConfig {
 	pub timeout: u64,
 	#[serde(default)]
-	pub mode: RetrieveMode
+	pub mode: RetrieveMode,
+}
+
+impl Default for WadoConfig {
+	fn default() -> Self {
+		Self {
+			mode: RetrieveMode::Concurrent,
+			timeout: 60_000,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RetrieveMode {
 	Concurrent,
-	Sequential
+	Sequential,
 }
 
 impl Default for RetrieveMode {
@@ -65,6 +80,12 @@ impl Default for RetrieveMode {
 #[serde(rename_all = "kebab-case")]
 pub struct StowConfig {
 	pub timeout: u64,
+}
+
+impl Default for StowConfig {
+	fn default() -> Self {
+		Self { timeout: 30_000 }
+	}
 }
 
 impl AppConfig {

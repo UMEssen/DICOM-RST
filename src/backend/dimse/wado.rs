@@ -1,8 +1,9 @@
 use crate::api::wado::{InstanceResponse, RetrieveError, RetrieveInstanceRequest, WadoService};
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::movescu::{MoveError, MoveServiceClassUser};
-use crate::backend::dimse::cmove::{CompositeMoveRequest, MovePermit, MoveSubOperation, TaskKey};
-use crate::backend::dimse::cmove::{MoveMediator, MoveTask};
+use crate::backend::dimse::cmove::{
+	CompositeMoveRequest, MoveMediator, MoveSubOperation, SubscriptionTopic,
+};
 use crate::backend::dimse::{next_message_id, WriteError};
 use crate::config::{RetrieveMode, WadoConfig};
 use crate::types::{Priority, US};
@@ -26,7 +27,7 @@ use tracing::{error, trace, warn};
 
 pub struct DimseWadoService {
 	movescu: Arc<MoveServiceClassUser>,
-	mediator: Arc<RwLock<MoveMediator>>,
+	mediator: MoveMediator,
 	timeout: Duration,
 	config: WadoConfig,
 }
@@ -51,7 +52,7 @@ impl WadoService for DimseWadoService {
 impl DimseWadoService {
 	pub fn new(
 		pool: AssociationPool,
-		mediator: Arc<RwLock<MoveMediator>>,
+		mediator: MoveMediator,
 		timeout: Duration,
 		config: WadoConfig,
 	) -> Self {
@@ -100,22 +101,16 @@ impl DimseWadoService {
 		identifier: InMemDicomObject,
 	) -> DicomMultipartStream<'static> {
 		let message_id = next_message_id();
-		let key = match self.config.mode {
-			RetrieveMode::Concurrent => TaskKey::new(AE::from(aet), Some(message_id)),
-			RetrieveMode::Sequential => TaskKey::new(AE::from(aet), None),
-		};
-
 		let (tx, mut rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
-		let permit: MovePermit = {
-			let mediator = self.mediator.read().await;
-			let permit = mediator.acquire_permit(aet).await;
-			drop(mediator);
-			let mut mediator = self.mediator.write().await;
 
-			mediator.add(MoveTask::new(key.clone(), tx.clone()));
-			drop(mediator);
-			permit
+		let subscription_topic = match self.config.mode {
+			RetrieveMode::Concurrent => SubscriptionTopic::identified(AE::from(aet), message_id),
+			RetrieveMode::Sequential => SubscriptionTopic::unidentified(AE::from(aet)),
 		};
+		let subscription = self
+			.mediator
+			.subscribe(subscription_topic, tx.clone())
+			.await;
 
 		let req = CompositeMoveRequest {
 			identifier,
@@ -125,8 +120,6 @@ impl DimseWadoService {
 		};
 
 		let movescu = Arc::clone(&self.movescu);
-		let mediator = Arc::clone(&self.mediator);
-
 		tokio::spawn(async move {
 			let send_result = if let Err(move_err) = movescu.invoke(req).await {
 				tx.send(Err(move_err)).await
@@ -137,9 +130,6 @@ impl DimseWadoService {
 			if send_result.is_err() {
 				warn!("Channel closed - could not notify about C-MOVE completion");
 			}
-
-			let mut mediator = mediator.write().await;
-			mediator.remove(&key);
 		});
 
 		let rx_stream = stream! {
@@ -161,7 +151,7 @@ impl DimseWadoService {
 			}
 		};
 
-		DicomMultipartStream::new(DropStream::new(rx_stream, permit))
+		DicomMultipartStream::new(DropStream::new(rx_stream, subscription))
 	}
 }
 

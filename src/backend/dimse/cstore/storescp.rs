@@ -1,12 +1,11 @@
 use crate::backend::dimse::association;
-use crate::backend::dimse::cmove::MoveSubOperation;
-use crate::backend::dimse::cmove::{MoveMediator, TaskKey};
+use crate::backend::dimse::cmove::{MoveMediator, MoveSubOperation, SubscriptionTopic};
 use crate::backend::dimse::cstore::{
 	CompositeStoreResponse, COMMAND_FIELD_COMPOSITE_STORE_REQUEST,
 };
 use crate::backend::dimse::{DicomMessageReader, DicomMessageWriter};
 use crate::config::DimseServerConfig;
-use crate::types::{UI, US};
+use crate::types::{AE, UI, US};
 use anyhow::Context;
 use association::server::{ServerAssociation, ServerAssociationOptions};
 use association::Association;
@@ -17,7 +16,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, info_span, instrument, Instrument};
 
 pub struct StoreServiceClassProvider {
@@ -25,12 +23,12 @@ pub struct StoreServiceClassProvider {
 }
 
 struct InnerStoreServiceClassProvider {
-	mediator: Arc<RwLock<MoveMediator>>,
+	mediator: MoveMediator,
 	config: DimseServerConfig,
 }
 
 impl StoreServiceClassProvider {
-	pub fn new(mediator: Arc<RwLock<MoveMediator>>, config: DimseServerConfig) -> Self {
+	pub fn new(mediator: MoveMediator, config: DimseServerConfig) -> Self {
 		Self {
 			inner: Arc::new(InnerStoreServiceClassProvider { mediator, config }),
 		}
@@ -70,7 +68,7 @@ impl StoreServiceClassProvider {
 		let association = ServerAssociation::new(options).await?;
 
 		// Duration::MAX to indefinitely wait for incoming messages
-		while let Ok(message) = association.read_message(Duration::MAX).await {
+		'read: while let Ok(message) = association.read_message(Duration::MAX).await {
 			let pctx = association
 				.presentation_contexts()
 				.first()
@@ -137,19 +135,16 @@ impl StoreServiceClassProvider {
 			);
 
 			let file = Arc::new(file);
-			let mediator = inner.mediator.read().await;
 
 			for aet in &inner.config.notify_aets {
-				if let Some(callback) = mediator
-					.get(&TaskKey::new(String::from(aet), move_originator_id))
-					.or_else(|| mediator.get(&TaskKey::new(String::from(aet), None)))
+				let topic = SubscriptionTopic::new(AE::from(aet), move_originator_id);
+				if let Err(err) = inner
+					.mediator
+					.publish(&topic, Ok(MoveSubOperation::Pending(Arc::clone(&file))))
+					.await
 				{
-					if let Err(err) = callback
-						.send(Ok(MoveSubOperation::Pending(Arc::clone(&file))))
-						.await
-					{
-						error!("Failed to send via callback: {err}");
-					}
+					error!("Failed to publish sub-operation over subscription: {err}");
+					break 'read; // stop receiving further messages from this peer
 				}
 			}
 		}

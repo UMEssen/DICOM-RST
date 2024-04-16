@@ -61,7 +61,7 @@ pub struct AppState {
 	#[cfg(feature = "dimse")]
 	pub pools: AssociationPools,
 	#[cfg(feature = "dimse")]
-	pub move_mediator: Arc<RwLock<MoveMediator>>,
+	pub mediator: MoveMediator,
 }
 
 fn init_sentry(config: &AppConfig) -> sentry::ClientInitGuard {
@@ -104,26 +104,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run(config: AppConfig) -> anyhow::Result<()> {
 	#[cfg(feature = "dimse")]
-	let move_mediator = Arc::new(RwLock::new(MoveMediator::new(&config)));
+	let mediator = MoveMediator::new(&config);
 	#[cfg(feature = "dimse")]
 	let pools = AssociationPools::new(&config);
 
 	let app_state = AppState {
 		config: config.clone(),
 		#[cfg(feature = "dimse")]
-		move_mediator: Arc::clone(&move_mediator),
+		mediator: mediator.clone(),
 		#[cfg(feature = "dimse")]
 		pools,
 	};
 
 	#[cfg(feature = "dimse")]
 	for dimse_config in config.server.dimse {
-		let move_mediator = Arc::clone(&move_mediator);
 		let handle = Handle::current();
 		// Run each STORE-SCP in a dedicated thread
+		let mediator = mediator.clone();
 		std::thread::spawn(move || {
 			handle.spawn(async move {
-				let storescp = StoreServiceClassProvider::new(move_mediator, dimse_config);
+				let storescp = StoreServiceClassProvider::new(mediator, dimse_config);
 				if let Err(err) = storescp.spawn().await {
 					error!("Failed to spawn STORE-SCP thread: {err}");
 					// Unrecoverable error - exit the process

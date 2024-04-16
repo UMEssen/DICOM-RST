@@ -11,7 +11,6 @@ use axum::extract::{FromRef, FromRequestParts, Path};
 use axum::http::request::Parts;
 use axum::http::StatusCode;
 use serde::Deserialize;
-use std::sync::Arc;
 use std::time::Duration;
 
 // #[cfg(feature = "dimse")]
@@ -65,7 +64,7 @@ where
 				))),
 				wado: Some(Box::new(DimseWadoService::new(
 					pool.to_owned(),
-					Arc::clone(&state.move_mediator),
+					state.mediator,
 					Duration::from_millis(ae_config.wado.timeout),
 					ae_config.wado.clone()
 				))),
