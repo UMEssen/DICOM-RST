@@ -118,18 +118,15 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 
 	#[cfg(feature = "dimse")]
 	for dimse_config in config.server.dimse {
-		let handle = Handle::current();
-		// Run each STORE-SCP in a dedicated thread
 		let mediator = mediator.clone();
-		std::thread::spawn(move || {
-			handle.spawn(async move {
-				let storescp = StoreServiceClassProvider::new(mediator, dimse_config);
-				if let Err(err) = storescp.spawn().await {
-					error!("Failed to spawn STORE-SCP thread: {err}");
-					// Unrecoverable error - exit the process
-					std::process::exit(-1);
-				}
-			});
+
+		tokio::spawn(async move {
+			let storescp = StoreServiceClassProvider::new(mediator, dimse_config);
+			if let Err(err) = storescp.spawn().await {
+				error!("Failed to spawn STORE-SCP thread: {err}");
+				// Unrecoverable error - exit the process
+				std::process::exit(-1);
+			}
 		});
 	}
 
