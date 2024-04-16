@@ -9,6 +9,7 @@ use association::AssociationError;
 use dicom::object::{FileDicomObject, InMemDicomObject};
 use std::time::Duration;
 use thiserror::Error;
+use tracing::trace;
 
 pub struct StoreServiceClassUser {
 	pool: AssociationPool,
@@ -40,8 +41,11 @@ impl StoreServiceClassUser {
 		};
 
 		association.write_message(request, self.timeout).await?;
+		trace!("Sent C-STORE-RQ");
 
 		association.read_message(self.timeout).await?;
+		trace!("Received C-STORE-RSP");
+
 		Ok(())
 	}
 }

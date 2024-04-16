@@ -34,7 +34,6 @@ impl StoreServiceClassProvider {
 		}
 	}
 
-	#[instrument(skip_all, name = " STORE-SCP")]
 	pub async fn spawn(&self) -> anyhow::Result<()> {
 		let address = SocketAddr::from((self.inner.config.host, self.inner.config.port));
 		let listener = TcpListener::bind(&address).await?;
@@ -42,15 +41,17 @@ impl StoreServiceClassProvider {
 		loop {
 			match listener.accept().await {
 				Ok((stream, peer)) => {
+					let span = info_span!("STORE-SCP", peer = peer.to_string());
 					info!("Accepted incoming connection from {peer}");
 					let inner = Arc::clone(&self.inner);
-					tokio::spawn(Self::process(stream, inner));
+					tokio::spawn(Self::process(stream, inner).instrument(span));
 				}
 				Err(err) => error!("Failed to accept incoming connection: {err}"),
 			};
 		}
 	}
 
+	#[instrument(skip_all)]
 	async fn process(
 		stream: TcpStream,
 		inner: Arc<InnerStoreServiceClassProvider>,
@@ -108,7 +109,11 @@ impl StoreServiceClassProvider {
 				.and_then(Result::ok)
 				.context("Missing tag AFFECTED_SOP_INSTANCE_UID (0000,1000)")?;
 
-			debug!("Received instance {} ({})", sop_instance_uid, sop_class_uid);
+			info!(
+				sop_instance_uid = sop_instance_uid.as_ref(),
+				sop_class_uid = sop_class_uid.as_ref(),
+				"Received instance"
+			);
 			let response = CompositeStoreResponse {
 				sop_instance_uid: UI::from(sop_instance_uid.clone()),
 				sop_class_uid: UI::from(sop_class_uid.clone()),

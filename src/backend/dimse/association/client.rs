@@ -101,7 +101,6 @@ impl ClientAssociation {
 				};
 
 				while let Some(command) = rx.blocking_recv() {
-					debug!("{command:?}");
 					let result = match command {
 						Command::Send(pdu, reply_to) => {
 							let send_result = Self::chunked_send(&mut association, &pdu);

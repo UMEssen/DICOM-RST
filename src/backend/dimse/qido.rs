@@ -14,7 +14,7 @@ use dicom::dictionary_std::tags;
 use dicom::object::InMemDicomObject;
 use futures::{StreamExt, TryStreamExt};
 use std::time::Duration;
-use tracing::warn;
+use tracing::{info, warn};
 
 pub struct DimseQidoService {
 	findscu: FindServiceClassUser,

@@ -69,8 +69,6 @@ impl ServerAssociation {
 				};
 
 				while let Some(command) = rx.blocking_recv() {
-					debug!("{command:?}");
-
 					let result = match command {
 						Command::Send(pdu, response) => {
 							let send_result = association.send(&pdu).map_err(|e| e.into());

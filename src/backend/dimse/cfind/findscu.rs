@@ -13,6 +13,7 @@ use dicom::object::InMemDicomObject;
 use futures::Stream;
 use std::time::Duration;
 use thiserror::Error;
+use tracing::{debug, trace};
 
 pub struct FindServiceClassUser {
 	pool: AssociationPool,
@@ -71,10 +72,12 @@ impl FindServiceClassUser {
 			let association = self.pool.get(presentation).await?;
 			let request = CompositeFindRequest::from(options);
 			association.write_message(request, self.timeout).await?;
+			trace!("Sent C-FIND-RQ");
 
 			loop {
 				let response = association.read_message(self.timeout).await?;
 				let response = CompositeFindResponse::try_from(response)?;
+				trace!("Received C-FIND-RSP");
 
 				if let Some(data) = response.data {
 					yield data;
