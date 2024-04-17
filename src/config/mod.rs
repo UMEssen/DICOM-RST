@@ -101,8 +101,8 @@ impl AppConfig {
 		use config::{Config, Environment, File, FileFormat};
 		Config::builder()
 			.add_source(File::from_str(
-				include_str!("defaults.toml"),
-				FileFormat::Toml,
+				include_str!("defaults.yaml"),
+				FileFormat::Yaml,
 			))
 			.add_source(File::with_name("config.toml").required(false))
 			.add_source(Environment::with_prefix("DICOM_RST").separator("_"))

@@ -1,0 +1,31 @@
+telemetry:
+  # sentry: $SENTRY_DSN
+  level: INFO
+server:
+  aet: DICOM-RST
+  http:
+    host: 0.0.0.0
+    port: 8080
+    max-upload-size: 50000000
+    request-timeout: 60000
+  dimse:
+    - aet: DICOM-RST
+      host: 0.0.0.0
+      port: 7001
+aets:
+  - aet: ORTHANC
+    host: 127.0.0.1
+    port: 4242
+    backend: dimse
+    pool:
+      size: 16
+      timeout: 10000
+    qido-rs:
+      timeout: 10000
+    stow-rs:
+      timeout: 10000
+    wado-rs:
+      timeout: 30000
+      mode: concurrent
+      receivers:
+        - DICOM-RST # see server.dimse
