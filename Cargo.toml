@@ -38,7 +38,6 @@ http-body = { version = "1.0.0", features = [] }
 http-body-util = "0.1.1"
 hyper-util = { version = "0.1.3", features = ["full"] }
 axum = { version = "0.7.5", features = ["multipart"] }
-axum-macros = "0.4.1"
 axum-extra = { version = "0.9.3", features = ["query"] }
 axum-streams = { version = "0.14.0", features = ["json"] }
 futures = "0.3.30"
@@ -51,7 +50,6 @@ rand = "0.8.5"
 uuid = { version = "1.7.0", features = ["v4"] }
 bytes = "1.6.0"
 multer = "3.0.0"
-clap = { version = "4.5.4", features = ["derive"] }
 pin-project = "1.1.5"
 
 [lints.rust]
