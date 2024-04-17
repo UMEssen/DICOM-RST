@@ -104,7 +104,7 @@ impl AppConfig {
 				include_str!("defaults.yaml"),
 				FileFormat::Yaml,
 			))
-			.add_source(File::with_name("config.toml").required(false))
+			.add_source(File::with_name("config.yaml").required(false))
 			.add_source(Environment::with_prefix("DICOM_RST").separator("_"))
 			.build()?
 			.try_deserialize()
