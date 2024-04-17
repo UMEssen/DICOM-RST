@@ -41,7 +41,11 @@ impl StoreServiceClassProvider {
 		loop {
 			match listener.accept().await {
 				Ok((stream, peer)) => {
-					let span = info_span!("STORE-SCP", peer = peer.to_string());
+					let span = info_span!(
+						"STORE-SCP",
+						aet = &self.inner.config.aet,
+						peer = peer.to_string()
+					);
 					info!("Accepted incoming connection from {peer}");
 					let inner = Arc::clone(&self.inner);
 					tokio::spawn(Self::process(stream, inner).instrument(span));

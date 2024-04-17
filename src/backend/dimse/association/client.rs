@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use super::{AskPattern, Association, AssociationError, ChannelError, Command};
@@ -65,20 +65,29 @@ impl ClientAssociation {
 		let (tx, mut rx) = tokio::sync::mpsc::channel::<Command>(1);
 		let (connect_tx, connect_result) = oneshot::channel::<Result<_, AssociationError>>();
 
+		let calling_aet = options.calling_aet;
+		let called_aet = options.called_aet;
 		let address = options.address;
+
 		let options = dicom::ul::ClientAssociationOptions::new()
-			.calling_ae_title(options.calling_aet)
-			.called_ae_title(options.called_aet)
-			.with_presentation_context(
-				options.abstract_syntax,
-				Vec::from(options.transfer_syntaxes),
-			);
+			.calling_ae_title(calling_aet.clone())
+			.called_ae_title(called_aet.clone())
+			.with_presentation_context(options.abstract_syntax, options.transfer_syntaxes);
 
 		let _handle = thread::Builder::new()
 			.name(String::from("calling_aet"))
 			.spawn(move || {
+				let span =
+					tracing::info_span!("ClientAssociation", association_id = uuid.to_string());
+				let _enter = span.enter();
+
 				let mut association = match options.establish(address) {
 					Ok(mut association) => {
+						info!(
+							calling_aet,
+							called_aet, "Established new client association"
+						);
+
 						let presentation_contexts = Vec::from(association.presentation_contexts());
 						let acceptor_max_pdu_length = association.acceptor_max_pdu_length();
 
@@ -94,7 +103,10 @@ impl ClientAssociation {
 						association
 					}
 					Err(e) => {
-						error!(backend_uuid = uuid.to_string(), "Failed to connect: {e}");
+						error!(
+							association_uuid = uuid.to_string(),
+							"Failed to connect: {e}"
+						);
 						connect_tx.send(Err(e.into())).map_err(|_| ())?;
 						return Err(());
 					}
@@ -116,8 +128,8 @@ impl ClientAssociation {
 					};
 					if let Some(err) = result.err() {
 						error!(
-							backend_uuid = uuid.to_string(),
-							"Error in ClientAssociation backend: {err}"
+							association_uuid = uuid.to_string(),
+							"Error in ClientAssociation: {err}"
 						);
 						return Err(());
 					}
@@ -127,7 +139,7 @@ impl ClientAssociation {
 
 				if let Err(err) = association.abort() {
 					debug!(
-						backend_uuid = uuid.to_string(),
+						association_uuid = uuid.to_string(),
 						"Failed to abort ClientAssociation: {err}"
 					);
 				}
@@ -179,7 +191,7 @@ impl Association for ClientAssociation {
 	fn close(&mut self) {
 		if let Err(err) = self.tcp_stream.shutdown(std::net::Shutdown::Both) {
 			debug!(
-				backend_uuid = self.uuid.to_string(),
+				association_uuid = self.uuid.to_string(),
 				"Failed to shutdown TcpStream: {err}"
 			);
 		}

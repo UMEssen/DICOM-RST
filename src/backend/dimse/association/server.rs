@@ -41,13 +41,18 @@ impl ServerAssociation {
 		let _handle = thread::Builder::new()
 			.name(format!("{}-server", options.aet))
 			.spawn(move || {
-				let span = tracing::info_span!("backend", backend_uuid = uuid.to_string());
+				let span =
+					tracing::info_span!("ServerAssociation", association_id = uuid.to_string());
 				let _enter = span.enter();
-
-				info!("Establishing new server association");
 
 				let mut association = match server_options.establish(options.tcp_stream) {
 					Ok(mut association) => {
+						info!(
+							calling_aet = association.client_ae_title(),
+							called_aet = options.aet,
+							"Established new server association"
+						);
+
 						let pcs = association
 							.presentation_contexts()
 							.into_iter()
@@ -86,7 +91,7 @@ impl ServerAssociation {
 					};
 
 					if let Some(err) = result.err() {
-						error!("Error in ServerAssociation backend: {err}");
+						error!("Error in ServerAssociation: {err}");
 						return Err(());
 					}
 				}
