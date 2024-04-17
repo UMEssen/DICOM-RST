@@ -23,9 +23,8 @@ pub trait WadoService: Send + Sync {
 
 #[derive(Debug, Error)]
 pub enum RetrieveError {
-	#[error("Failure in backend")]
+	#[error(transparent)]
 	Backend {
-		#[source]
 		source: Box<dyn std::error::Error>,
 	},
 }

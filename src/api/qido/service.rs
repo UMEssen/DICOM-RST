@@ -264,7 +264,7 @@ pub struct ResourceQuery {
 
 #[derive(Debug, Error)]
 pub enum SearchError {
-	#[error("Failure in backend")]
+	#[error(transparent)]
 	Backend { source: Box<dyn std::error::Error> },
 }
 
