@@ -208,7 +208,7 @@ impl Manager for AssociationManager {
 	) -> Result<Self::Object, PoolError<Self::Error>> {
 		let options = ClientAssociationOptions {
 			calling_aet: self.calling_aet.clone(),
-			called_aet: self.calling_aet.clone(),
+			called_aet: self.called_aet.clone(),
 			abstract_syntax: param.abstract_syntax_uid.clone(),
 			transfer_syntaxes: param.transfer_syntax_uids.clone(),
 			address: self.address,
