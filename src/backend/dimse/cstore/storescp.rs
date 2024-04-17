@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, error, info, info_span, instrument, Instrument};
+use tracing::{debug, error, info, info_span, instrument, Instrument, trace};
 
 pub struct StoreServiceClassProvider {
 	inner: Arc<InnerStoreServiceClassProvider>,
@@ -24,13 +24,18 @@ pub struct StoreServiceClassProvider {
 
 struct InnerStoreServiceClassProvider {
 	mediator: MoveMediator,
+	subscribers: Vec<AE>,
 	config: DimseServerConfig,
 }
 
 impl StoreServiceClassProvider {
-	pub fn new(mediator: MoveMediator, config: DimseServerConfig) -> Self {
+	pub fn new(mediator: MoveMediator, subscribers: Vec<AE>, config: DimseServerConfig) -> Self {
 		Self {
-			inner: Arc::new(InnerStoreServiceClassProvider { mediator, config }),
+			inner: Arc::new(InnerStoreServiceClassProvider {
+				mediator,
+				subscribers,
+				config,
+			}),
 		}
 	}
 
@@ -144,15 +149,15 @@ impl StoreServiceClassProvider {
 			);
 
 			let file = Arc::new(file);
-
-			for aet in &inner.config.notify_aets {
-				let topic = SubscriptionTopic::new(AE::from(aet), move_originator_id);
+			for sub_aet in &inner.subscribers {
+				trace!("Publishing sub-operation result to subscriber {sub_aet}");
+				let topic = SubscriptionTopic::new(AE::from(sub_aet), move_originator_id);
 				if let Err(err) = inner
 					.mediator
 					.publish(&topic, Ok(MoveSubOperation::Pending(Arc::clone(&file))))
 					.await
 				{
-					error!("Failed to publish sub-operation over subscription: {err}");
+					error!("Failed to publish sub-operation result over subscription: {err}");
 					break 'read; // stop receiving further messages from this peer
 				}
 			}

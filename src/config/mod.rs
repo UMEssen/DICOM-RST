@@ -52,6 +52,7 @@ pub struct WadoConfig {
 	pub timeout: u64,
 	#[serde(default)]
 	pub mode: RetrieveMode,
+	pub receivers: Vec<AE>,
 }
 
 impl Default for WadoConfig {
@@ -59,6 +60,7 @@ impl Default for WadoConfig {
 		Self {
 			mode: RetrieveMode::Concurrent,
 			timeout: 60_000,
+			receivers: Vec::new(),
 		}
 	}
 }
@@ -153,7 +155,6 @@ pub struct DimseServerConfig {
 	pub host: IpAddr,
 	pub port: u16,
 	pub aet: AE,
-	pub notify_aets: Vec<AE>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -179,7 +180,6 @@ impl Default for DimseServerConfig {
 			host: IpAddr::from([0, 0, 0, 0]),
 			port: 7001,
 			aet: AE::from(DEFAULT_AET),
-			notify_aets: Vec::new(),
 		}
 	}
 }

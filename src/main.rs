@@ -8,6 +8,7 @@ use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::MoveMediator;
 use crate::backend::dimse::StoreServiceClassProvider;
 use crate::config::{AppConfig, HttpServerConfig};
+use crate::types::AE;
 use association::pool::AssociationPools;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::response::Response;
@@ -119,9 +120,16 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 	#[cfg(feature = "dimse")]
 	for dimse_config in config.server.dimse {
 		let mediator = mediator.clone();
+		let subscribers: Vec<AE> = config
+			.aets
+			.iter()
+			.filter(|&ae| ae.wado.receivers.contains(&dimse_config.aet))
+			.cloned()
+			.map(|ae| ae.aet)
+			.collect();
 
 		tokio::spawn(async move {
-			let storescp = StoreServiceClassProvider::new(mediator, dimse_config);
+			let storescp = StoreServiceClassProvider::new(mediator, subscribers, dimse_config);
 			if let Err(err) = storescp.spawn().await {
 				error!("Failed to spawn STORE-SCP thread: {err}");
 				// Unrecoverable error - exit the process

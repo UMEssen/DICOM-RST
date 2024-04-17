@@ -1,6 +1,6 @@
 [telemetry]
-sentry = ""
-level = "INFO"
+#sentry = "https://536225a2a8979a2fe1882c06579a4f6b@sentry.ship.ume.de/4"
+level = "DEBUG"
 
 [server]
 aet = "DICOM-RST"
@@ -15,8 +15,6 @@ request-timeout = 60_000 # 1 minute
 host = "0.0.0.0"
 port = 7001
 aet = "DICOM-RST"
-notify-aets = []
-# notify-aets = ["ORTHANC"]
 
 # [[aets]]
 # aet = "ORTHANC"
@@ -26,4 +24,4 @@ notify-aets = []
 # pool = { size = 16, timeout = 10_000 }
 # qido-rs = { timeout = 10_000 }
 # stow-rs = { timeout = 30_000 }
-# wado-rs = { timeout = 30_000, mode = "concurrent" }
+# wado-rs = { timeout = 30_000, mode = "concurrent", receivers = ["DICOM-RST"] }

@@ -21,8 +21,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use thiserror::Error;
+
 use tokio::sync::mpsc;
-use tokio::sync::RwLock;
 use tracing::{error, trace, warn};
 
 pub struct DimseWadoService {
@@ -38,15 +39,36 @@ impl WadoService for DimseWadoService {
 		&self,
 		request: RetrieveInstanceRequest,
 	) -> Result<InstanceResponse, RetrieveError> {
+		if self.config.receivers.len() > 1 {
+			warn!("Multiple receivers are not supported yet.");
+		}
+
+		let storescp_aet = self
+			.config
+			.receivers
+			.first() // TODO
+			.ok_or_else(|| RetrieveError::Backend {
+				source: Box::new(DimseRetrieveError::MissingReceiver {
+					aet: request.query.aet.clone(),
+				}),
+			})?;
+
 		let stream = self
 			.retrieve_instances(
 				&request.query.aet,
+				storescp_aet,
 				Self::create_identifier(Some(&request.query.study_instance_uid), None, None),
 			)
 			.await;
 
 		Ok(InstanceResponse { stream })
 	}
+}
+
+#[derive(Debug, Error)]
+pub enum DimseRetrieveError {
+	#[error("Cannot execute C-MOVE due to missing StoreSCP for AET {aet}.")]
+	MissingReceiver { aet: AE },
 }
 
 impl DimseWadoService {
@@ -98,6 +120,7 @@ impl DimseWadoService {
 	async fn retrieve_instances(
 		&self,
 		aet: &str,
+		storescp_aet: &str,
 		identifier: InMemDicomObject,
 	) -> DicomMultipartStream<'static> {
 		let message_id = next_message_id();
@@ -112,16 +135,16 @@ impl DimseWadoService {
 			.subscribe(subscription_topic, tx.clone())
 			.await;
 
-		let req = CompositeMoveRequest {
+		let request = CompositeMoveRequest {
 			identifier,
 			message_id,
 			priority: Priority::Medium as US,
-			destination: String::from("DICOM-RST"),
+			destination: AE::from(storescp_aet),
 		};
 
 		let movescu = Arc::clone(&self.movescu);
 		tokio::spawn(async move {
-			let send_result = if let Err(move_err) = movescu.invoke(req).await {
+			let send_result = if let Err(move_err) = movescu.invoke(request).await {
 				tx.send(Err(move_err)).await
 			} else {
 				tx.send(Ok(MoveSubOperation::Completed)).await
