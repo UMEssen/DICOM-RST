@@ -39,22 +39,23 @@ async fn qido_handler(provider: ServiceProvider, request: SearchRequest) -> impl
 		let matches: Result<Vec<InMemDicomObject>, SearchError> =
 			response.stream.try_collect().await;
 
-		if let Ok(matches) = matches {
-			if matches.is_empty() {
-				StatusCode::NO_CONTENT.into_response()
-			} else {
-				let json: Vec<DicomJson<InMemDicomObject>> =
-					matches.into_iter().map(DicomJson::from).collect();
+		match matches {
+			Ok(matches) => {
+				if matches.is_empty() {
+					StatusCode::NO_CONTENT.into_response()
+				} else {
+					let json: Vec<DicomJson<InMemDicomObject>> =
+						matches.into_iter().map(DicomJson::from).collect();
 
-				axum::response::Response::builder()
-					.status(StatusCode::OK)
-					.header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-					.body(StreamBodyAs::json_array(futures::stream::iter(json)))
-					.unwrap()
-					.into_response()
+					axum::response::Response::builder()
+						.status(StatusCode::OK)
+						.header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+						.body(StreamBodyAs::json_array(futures::stream::iter(json)))
+						.unwrap()
+						.into_response()
+				}
 			}
-		} else {
-			StatusCode::INTERNAL_SERVER_ERROR.into_response()
+			Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
 		}
 	} else {
 		(StatusCode::NOT_FOUND, "QIDO-RS endpoint is disabled").into_response()
