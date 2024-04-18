@@ -170,7 +170,7 @@ impl<A: Association> DicomMessageWriter for A {
 pub enum ReadError {
 	#[error("Failed to read DICOM object: {0}")]
 	Reader(#[from] dicom::object::ReadError),
-	#[error("Received unexpected PDU")]
+	#[error("Received unexpected PDU {0:?}")]
 	UnexpectedPdu(Pdu),
 	#[error("Received fragments out of order")]
 	OutOfOrder,

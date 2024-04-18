@@ -167,7 +167,7 @@ impl DimseWadoService {
 						break;
 					},
 					Err(err) => {
-						error!("C-MOVE sub-operation failed: {err}");
+						error!("{err}");
 						Err(err)?;
 					}
 				}

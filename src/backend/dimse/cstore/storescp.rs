@@ -53,7 +53,11 @@ impl StoreServiceClassProvider {
 					);
 					info!("Accepted incoming connection from {peer}");
 					let inner = Arc::clone(&self.inner);
-					tokio::spawn(Self::process(stream, inner).instrument(span));
+					tokio::spawn(async move {
+						if let Err(err) = Self::process(stream, inner).instrument(span).await {
+							error!("{err}");
+						}
+					});
 				}
 				Err(err) => error!("Failed to accept incoming connection: {err}"),
 			};
@@ -83,7 +87,8 @@ impl StoreServiceClassProvider {
 				.presentation_contexts()
 				.first()
 				.context("No presentation context available")?;
-
+			debug!("Used transfer syntax {} to read message", pctx.transfer_syntax);
+			
 			let command_field = message
 				.command
 				.get(tags::COMMAND_FIELD)
