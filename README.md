@@ -8,7 +8,7 @@
 
 Developed as part of the [Open Medical Inference](https://diz.ikim.nrw/en/project/omi/) methodology platform.
 
-[Changelog](./CHANGELOG.md) | [Configuration](./docs/configuration.md)
+[Changelog](./CHANGELOG.md) | [Wiki](https://github.com/UMEssen/DICOM-RST/wiki)
 
 </div>
 
