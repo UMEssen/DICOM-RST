@@ -17,8 +17,8 @@ s3 = []
 
 [dependencies]
 # DICOM processing
-dicom = { git = "https://github.com/Enet4/dicom-rs", rev = "6e020ec" }
-dicom-json = { git = "https://github.com/Enet4/dicom-rs", rev = "6e020ec" }
+dicom = "0.7.0"
+dicom-json = "0.7.0"
 sentry = { version = "0.32.2", features = ["tracing"] }
 
 # Serialization
