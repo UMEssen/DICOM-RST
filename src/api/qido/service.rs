@@ -59,7 +59,7 @@ fn to_value(entry: &DataDictionaryEntryRef, raw_value: &str) -> Result<Primitive
 	if raw_value.is_empty() {
 		return Ok(PrimitiveValue::Empty);
 	}
-	match entry.vr {
+	match entry.vr.relaxed() {
 		// String-like VRs, no parsing required
 		VR::AE
 		| VR::AS
@@ -114,7 +114,7 @@ fn to_value(entry: &DataDictionaryEntryRef, raw_value: &str) -> Result<Primitive
 		_ => Err(format!(
 			"Attribute {} cannot be used for matching due to unsupported VR {}",
 			entry.tag(),
-			entry.vr
+			entry.vr.relaxed()
 		)),
 	}
 }
