@@ -71,7 +71,7 @@ impl FindServiceClassUser {
 		try_stream! {
 			let association = self.pool.get(presentation).await?;
 			let request = CompositeFindRequest::from(options);
-			association.write_message(request, self.timeout).await?;
+			association.write_message(request, None, self.timeout).await?;
 			trace!("Sent C-FIND-RQ");
 
 			loop {

@@ -44,7 +44,8 @@ impl From<CompositeStoreRequest> for DicomMessage {
 
         Self {
             command,
-            data: Some(request.data_set)
+            data: Some(request.data_set),
+            presentation_context_id: None
         }
     }
 }
@@ -53,7 +54,7 @@ impl From<CompositeStoreRequest> for DicomMessage {
 pub struct CompositeStoreResponse {
 	pub message_id: US,
 	pub sop_class_uid: UI,
-	pub sop_instance_uid: UI,
+	pub sop_instance_uid: UI
 }
 
 impl From<CompositeStoreResponse> for DicomMessage {
@@ -71,6 +72,7 @@ impl From<CompositeStoreResponse> for DicomMessage {
         Self {
             command,
             data: None,
+            presentation_context_id: None
         }
     }
 }

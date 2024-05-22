@@ -48,6 +48,8 @@ pub struct DicomMessage {
 	pub command: InMemDicomObject,
 	/// The data set.
 	pub data: Option<InMemDicomObject>,
+	/// The presentation context id
+	pub presentation_context_id: Option<u8>,
 }
 
 impl Debug for DicomMessage {
@@ -106,6 +108,7 @@ pub trait DicomMessageWriter {
 	async fn write_message(
 		&self,
 		message: impl Into<DicomMessage>,
+		presentation_context_id: Option<u8>,
 		timeout: Duration,
 	) -> Result<(), WriteError>;
 }
@@ -115,14 +118,19 @@ impl<A: Association> DicomMessageWriter for A {
 	async fn write_message(
 		&self,
 		message: impl Into<DicomMessage>,
+		presentation_context_id: Option<u8>,
 		timeout: Duration,
 	) -> Result<(), WriteError> {
 		let message: DicomMessage = Into::into(message);
 
-		let presentation_context = self
-			.presentation_contexts()
-			.first()
-			.ok_or(NegotiationError::NoPresentationContext)?;
+		let presentation_context = match presentation_context_id {
+			None => self.presentation_contexts().first(),
+			Some(presentation_context_id) => self
+				.presentation_contexts()
+				.iter()
+				.find(|pctx| pctx.id == presentation_context_id),
+		}
+		.ok_or(NegotiationError::NoPresentationContext)?;
 
 		let mut command_buf = Vec::new();
 		message
@@ -239,6 +247,7 @@ impl<A: Association> DicomMessageReader for A {
 									return Ok(DicomMessage {
 										command,
 										data: None,
+										presentation_context_id: Some(pdv.presentation_context_id),
 									});
 								}
 							}
@@ -268,6 +277,7 @@ impl<A: Association> DicomMessageReader for A {
 									Ok(DicomMessage {
 										command,
 										data: Some(data),
+										presentation_context_id: Some(pdv.presentation_context_id),
 									})
 								} else {
 									// Cannot handle data fragments before the entire command set is received.

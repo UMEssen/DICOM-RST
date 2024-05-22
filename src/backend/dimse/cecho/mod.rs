@@ -30,7 +30,8 @@ impl From<CompositeEchoRequest> for DicomMessage {
         
         Self {
             command,
-            data: None
+            data: None,
+            presentation_context_id: None
         }
     }
 }

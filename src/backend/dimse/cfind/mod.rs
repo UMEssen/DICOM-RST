@@ -34,7 +34,8 @@ impl From<CompositeFindRequest> for DicomMessage {
         
         Self {
             command,
-            data: Some(request.identifier)
+            data: Some(request.identifier),
+            presentation_context_id: None
         }
     }
 }

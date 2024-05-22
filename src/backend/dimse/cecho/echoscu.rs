@@ -30,7 +30,7 @@ impl<'a> EchoServiceClassUser<'a> {
 		let request = CompositeEchoRequest {
 			message_id: next_message_id(),
 		};
-		self.association.write_message(request, timeout).await?;
+		self.association.write_message(request, None, timeout).await?;
 
 		let response = self.association.read_message(timeout).await?;
 		let response = CompositeEchoResponse::try_from(response)?;

@@ -39,7 +39,7 @@ impl MoveServiceClassUser {
 			})
 			.await?;
 
-		association.write_message(request, self.timeout).await?;
+		association.write_message(request, None, self.timeout).await?;
 		trace!("Sent C-MOVE-RQ");
 
 		loop {

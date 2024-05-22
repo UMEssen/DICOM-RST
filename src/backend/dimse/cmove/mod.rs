@@ -53,6 +53,7 @@ impl From<CompositeMoveRequest> for DicomMessage {
         Self {
             command,
             data: Some(request.identifier),
+			presentation_context_id: None
         }
     }
 }

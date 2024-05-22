@@ -40,7 +40,7 @@ impl StoreServiceClassUser {
 			data_set: file.into_inner(),
 		};
 
-		association.write_message(request, self.timeout).await?;
+		association.write_message(request, None, self.timeout).await?;
 		trace!("Sent C-STORE-RQ");
 
 		association.read_message(self.timeout).await?;
