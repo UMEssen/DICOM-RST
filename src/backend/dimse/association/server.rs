@@ -18,6 +18,7 @@ pub struct ServerAssociation {
 pub struct ServerAssociationOptions {
 	pub aet: String,
 	pub tcp_stream: TcpStream,
+	pub uncompressed: bool,
 }
 
 impl ServerAssociation {
@@ -28,7 +29,9 @@ impl ServerAssociation {
 			.promiscuous(true);
 
 		for syntax in TransferSyntaxRegistry.iter() {
-			if !syntax.is_unsupported() {
+			if options.uncompressed && syntax.is_codec_free() {
+				server_options = server_options.with_transfer_syntax(syntax.uid());
+			} else if !options.uncompressed && !syntax.is_unsupported() {
 				server_options = server_options.with_transfer_syntax(syntax.uid());
 			}
 		}
