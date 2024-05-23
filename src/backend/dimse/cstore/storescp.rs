@@ -80,7 +80,7 @@ impl StoreServiceClassProvider {
 		let options = ServerAssociationOptions {
 			aet: String::from("DICOM-RST"),
 			tcp_stream,
-			uncompressed: true
+			uncompressed: inner.config.uncompressed
 		};
 		let association = ServerAssociation::new(options).await?;
 

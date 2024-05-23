@@ -153,8 +153,25 @@ impl Default for HttpServerConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct DimseServerConfig {
 	pub host: IpAddr,
-	pub port: u16,
+	#[serde(default = "DimseServerConfig::default_aet")]
 	pub aet: AE,
+	#[serde(default = "DimseServerConfig::default_port")]
+	pub port: u16,
+	#[serde(default = "DimseServerConfig::default_uncompressed")]
+	pub uncompressed: bool,
+}
+
+impl DimseServerConfig {
+	pub const fn default_port() -> u16 {
+		7001
+	}
+	pub const fn default_uncompressed() -> bool {
+		true
+	}
+
+	pub fn default_aet() -> AE {
+		AE::from(DEFAULT_AET)
+	}
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -180,6 +197,7 @@ impl Default for DimseServerConfig {
 			host: IpAddr::from([0, 0, 0, 0]),
 			port: 7001,
 			aet: AE::from(DEFAULT_AET),
+			uncompressed: true,
 		}
 	}
 }
