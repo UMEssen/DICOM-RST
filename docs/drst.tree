@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE instance-profile
+        SYSTEM "https://resources.jetbrains.com/writerside/1.0/product-profile.dtd">
+
+<instance-profile id="drst"
+                  name="DICOM-RST"
+                  status="eap"
+                  start-page="introduction.md">
+
+    <toc-element topic="introduction.md"/>
+    <toc-element topic="installing.md"/>
+    <toc-element topic="configuration.md"/>
+    <toc-element topic="usage-guide.md">
+        <toc-element topic="endpoints-dicom-rst.md"/>
+        <toc-element topic="endpoints-dicomweb.md"/>
+    </toc-element>
+    <toc-element topic="troubleshooting.md"/>
+    <toc-element topic="backends.md">
+        <toc-element topic="backend-dimse.md"/>
+        <toc-element topic="backend-s3.md"/>
+    </toc-element>
+</instance-profile>

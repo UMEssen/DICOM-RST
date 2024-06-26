@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<buildprofiles xsi:noNamespaceSchemaLocation="https://resources.jetbrains.com/writerside/1.0/build-profiles.xsd"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <build-profile instance="drst">
+        <variables>
+            <primary-color>#F65B59</primary-color>
+            <custom-favicons>omi-logo.png</custom-favicons>
+            <header-logo>dicom-rst-icon.png</header-logo>
+            <product-web-url>https://omi.ikim.nrw/</product-web-url>
+            <download-title>Download DICOM-RST</download-title>
+            <download-page>https://github.com/orgs/UMEssen/packages?repo_name=DICOM-RST</download-page>
+
+            <offline-docs>true</offline-docs>
+            <showDownloadButton>true</showDownloadButton>
+            <color-preset>soft</color-preset>
+            <noindex-content>true</noindex-content>
+        </variables>
+        <footer>
+            <link href="https://omi.ikim.nrw/">Contact us</link>
+            <link href="https://github.com/UMEssen/DICOM-RST">GitHub</link>
+        </footer>
+    </build-profile>
+
+</buildprofiles>
