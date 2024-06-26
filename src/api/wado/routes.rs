@@ -1,3 +1,4 @@
+use std::error::Error;
 use crate::api::wado::RetrieveInstanceRequest;
 use crate::backend::ServiceProvider;
 use crate::types::UI;
@@ -8,7 +9,7 @@ use axum::http::{Response, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
-use tracing::instrument;
+use tracing::{error, instrument};
 
 /// HTTP Router for the Retrieve Transaction
 /// https://dicom.nema.org/medical/dicom/current/output/html/part18.html#sect_10.4
@@ -69,10 +70,13 @@ async fn instance_resource(
 				)
 				.body(Body::from_stream(response.stream))
 				.unwrap(),
-			Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+			Err(err) => {
+				error!("{err:?}");
+				(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
+			},
 		}
 	} else {
-		(StatusCode::NOT_FOUND, "WADO-RS endpoint is disabled").into_response()
+		(StatusCode::SERVICE_UNAVAILABLE, "WADO-RS endpoint is disabled").into_response()
 	}
 }
 

@@ -58,7 +58,7 @@ async fn qido_handler(provider: ServiceProvider, request: SearchRequest) -> impl
 			Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
 		}
 	} else {
-		(StatusCode::NOT_FOUND, "QIDO-RS endpoint is disabled").into_response()
+		(StatusCode::SERVICE_UNAVAILABLE, "QIDO-RS endpoint is disabled").into_response()
 	}
 }
 
