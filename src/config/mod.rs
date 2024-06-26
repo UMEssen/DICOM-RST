@@ -13,25 +13,58 @@ pub struct AppConfig {
 	#[serde(default)]
 	pub server: ServerConfig,
 	#[serde(default)]
-	pub aets: Vec<AeConfig>,
+	pub aets: Vec<ApplicationEntityConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct AeConfig {
-	pub host: IpAddr,
-	pub port: u16,
+pub struct ApplicationEntityConfig {
 	pub aet: String,
-	#[serde(default)]
-	pub backend: Backend,
-	#[serde(default)]
-	pub pool: PoolConfig,
+	#[serde(flatten)]
+	pub backend: BackendConfig,
 	#[serde(default, rename = "qido-rs")]
 	pub qido: QidoConfig,
 	#[serde(default, rename = "wado-rs")]
 	pub wado: WadoConfig,
 	#[serde(default, rename = "stow-rs")]
 	pub stow: StowConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "backend")]
+pub enum BackendConfig {
+	#[serde(rename = "DIMSE")]
+	Dimse(DimseConfig),
+	#[serde(rename = "S3")]
+	S3(S3Config),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct DimseConfig {
+	pub host: IpAddr,
+	pub port: u16,
+	#[serde(default)]
+	pub pool: PoolConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct S3Config {
+	pub endpoint: String,
+	pub bucket: String,
+	#[serde(default)]
+	pub region: Option<String>,
+	pub concurrency: usize,
+	#[serde(default)]
+	pub credentials: Option<S3Credentials>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct S3Credentials {
+	pub secret_key: String,
+	pub access_key: String
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +85,7 @@ pub struct WadoConfig {
 	pub timeout: u64,
 	#[serde(default)]
 	pub mode: RetrieveMode,
+	#[serde(default)]
 	pub receivers: Vec<AE>,
 }
 
@@ -136,6 +170,7 @@ pub struct HttpServerConfig {
 	pub port: u16,
 	pub max_upload_size: usize,
 	pub request_timeout: u64,
+	pub graceful_shutdown: bool
 }
 
 impl Default for HttpServerConfig {
@@ -143,6 +178,7 @@ impl Default for HttpServerConfig {
 		Self {
 			host: IpAddr::from([0, 0, 0, 0]),
 			port: 8080,
+			graceful_shutdown: true,
 			max_upload_size: 50_000_000, // 50 MB
 			request_timeout: 60_000,     // 1 min
 		}

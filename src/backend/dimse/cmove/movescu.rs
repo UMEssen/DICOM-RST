@@ -10,7 +10,7 @@ use dicom::dictionary_std::{tags, uids};
 use dicom::object::mem::InMemElement;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 pub struct MoveServiceClassUser {
 	pool: AssociationPool,

@@ -4,7 +4,8 @@ use crate::api::wado::WadoService;
 use crate::backend::dimse::qido::DimseQidoService;
 use crate::backend::dimse::stow::DimseStowService;
 use crate::backend::dimse::wado::DimseWadoService;
-use crate::config::Backend;
+use crate::backend::s3::wado::S3WadoService;
+use crate::config::BackendConfig;
 use crate::AppState;
 use async_trait::async_trait;
 use axum::extract::{FromRef, FromRequestParts, Path};
@@ -52,27 +53,29 @@ where
 			.find(|aet_config| aet_config.aet == aet)
 			.ok_or_else(|| (StatusCode::NOT_FOUND, format!("Unknown AET {aet}")))?;
 
-		#[cfg(feature = "dimse")]
-		let pool = state.pools.get(&ae_config.aet).expect("pool should exist");
-
-		let provider = match ae_config.backend {
+		// TODO: Use a singleton to avoid re-creating on every request.
+		let provider = match &ae_config.backend {
 			#[cfg(feature = "dimse")]
-			Backend::Dimse => Self {
-				qido: Some(Box::new(DimseQidoService::new(
-					pool.to_owned(),
-					Duration::from_millis(ae_config.qido.timeout),
-				))),
-				wado: Some(Box::new(DimseWadoService::new(
-					pool.to_owned(),
-					state.mediator,
-					Duration::from_millis(ae_config.wado.timeout),
-					ae_config.wado.clone()
-				))),
-				stow: Some(Box::new(DimseStowService::new(
-					pool.to_owned(),
-					Duration::from_millis(ae_config.stow.timeout),
-				))),
-			},
+			BackendConfig::Dimse { .. } => {
+				let pool = state.pools.get(&ae_config.aet).expect("pool should exist");
+
+				Self {
+					qido: Some(Box::new(DimseQidoService::new(
+						pool.to_owned(),
+						Duration::from_millis(ae_config.qido.timeout),
+					))),
+					wado: Some(Box::new(DimseWadoService::new(
+						pool.to_owned(),
+						state.mediator,
+						Duration::from_millis(ae_config.wado.timeout),
+						ae_config.wado.clone(),
+					))),
+					stow: Some(Box::new(DimseStowService::new(
+						pool.to_owned(),
+						Duration::from_millis(ae_config.stow.timeout),
+					))),
+				}
+			}
 			// For some reason serde doesn't work with feature-gated enum variants.
 			// A no-op backend is used as a workaround if the dimse feature is not enabled.
 			#[cfg(not(feature = "dimse"))]
@@ -81,15 +84,9 @@ where
 				wado: None,
 				stow: None,
 			},
-			// TODO: S3
-			Backend::S3 => Self {
+			BackendConfig::S3(config) => Self {
 				qido: None,
-				wado: None,
-				stow: None,
-			},
-			Backend::Disabled => Self {
-				qido: None,
-				wado: None,
+				wado: Some(Box::new(S3WadoService::new(config))),
 				stow: None,
 			},
 		};

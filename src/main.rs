@@ -158,9 +158,13 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let listener = TcpListener::bind(addr).await?;
 
 	info!("Started DICOMweb server on http://{addr}");
-	axum::serve(listener, app)
-		.with_graceful_shutdown(shutdown_signal())
-		.await?;
+	if config.server.http.graceful_shutdown {
+		axum::serve(listener, app)
+			.with_graceful_shutdown(shutdown_signal())
+			.await?;
+	} else {
+		axum::serve(listener, app).await?;
+	}
 
 	Ok(())
 }
