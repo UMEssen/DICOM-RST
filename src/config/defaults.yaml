@@ -8,15 +8,17 @@ server:
     port: 8080
     max-upload-size: 50000000
     request-timeout: 60000
+    graceful-shutdown: true
   dimse:
     - aet: DICOM-RST
       host: 0.0.0.0
       port: 7001
+      uncompressed: true
 aets:
   - aet: ORTHANC
     host: 127.0.0.1
     port: 4242
-    backend: dimse
+    backend: DIMSE
     pool:
       size: 16
       timeout: 10000
