@@ -5,6 +5,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  pages: write
+
 env:
   INSTANCE: 'docs/drst'
   ARTIFACT: 'webHelpDRST2-all.zip'
