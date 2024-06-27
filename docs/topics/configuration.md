@@ -212,11 +212,11 @@ The following options are available if the S3 backend is selected:
 aets:
   - aet: RESEARCH
     backend: S3
-    s3:
-      endpoint: http://s3.local
-      bucket: research
-      region: local
-      credentials:
+    endpoint: http://s3.local
+    bucket: research
+    region: local
+    concurrency: 32
+    credentials:
         access-key: ABC123
         secret-key: topSecret
 ```
