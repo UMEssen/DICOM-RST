@@ -1,7 +1,7 @@
 use crate::api::wado::{InstanceResponse, RetrieveError, RetrieveInstanceRequest, WadoService};
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::backend::dimse::wado::DicomMultipartStream;
-use crate::config::{S3Config, S3Credentials};
+use crate::config::{S3Config, S3Credentials, S3EndpointStyle};
 use async_trait::async_trait;
 use aws_config::retry::RetryConfig;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
@@ -56,7 +56,7 @@ impl S3WadoService {
 			.endpoint_url(&config.endpoint)
 			.region(config.region.clone().map(Region::new))
 			.behavior_version(BehaviorVersion::latest())
-			.force_path_style(true)
+			.force_path_style(matches!(config.endpoint_style,  S3EndpointStyle::Path))
 			.retry_config(RetryConfig::adaptive())
 			// Causes issues with long-running requests and high concurrency.
 			// It's okay to stall for some time.

@@ -58,13 +58,28 @@ pub struct S3Config {
 	pub concurrency: usize,
 	#[serde(default)]
 	pub credentials: Option<S3Credentials>,
+	#[serde(default)]
+	pub endpoint_style: S3EndpointStyle,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum S3EndpointStyle {
+	Path,
+	VHost,
+}
+
+impl Default for S3EndpointStyle {
+	fn default() -> Self {
+		Self::VHost
+	}
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct S3Credentials {
 	pub secret_key: String,
-	pub access_key: String
+	pub access_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -170,7 +185,7 @@ pub struct HttpServerConfig {
 	pub port: u16,
 	pub max_upload_size: usize,
 	pub request_timeout: u64,
-	pub graceful_shutdown: bool
+	pub graceful_shutdown: bool,
 }
 
 impl Default for HttpServerConfig {

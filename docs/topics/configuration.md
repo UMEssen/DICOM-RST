@@ -212,13 +212,14 @@ The following options are available if the S3 backend is selected:
 aets:
   - aet: RESEARCH
     backend: S3
-    endpoint: http://s3.local
+    endpoint: http://dicom.s3.local
+    endpoint-style: vhost
     bucket: research
     region: local
     concurrency: 32
     credentials:
-        access-key: ABC123
-        secret-key: topSecret
+      access-key: ABC123
+      secret-key: topSecret
 ```
 
 <deflist>
@@ -241,6 +242,14 @@ aets:
     <def title="concurrency" id="s3.concurrency">
     The maximum allowed amount of concurrent S3 operations.
     Increasing the amount of concurrency will massively improve throughput.
+    </def>
+    <def title="endpoint-style" id="s3.endpoint-style">
+        Sets the URL access style. Defaults to <b>vhost</b>.
+        Allowed values are:
+        <list>
+        <li><b>path</b>: For the deprecated <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access">path-style</a>.</li>
+        <li><b>vhost</b>: For the <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access">virtual-hosted-style</a>.</li>
+        </list>
     </def>
 </deflist>
 
