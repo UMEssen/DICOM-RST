@@ -2,6 +2,8 @@
 
 %product% requires configuration before it can run in your environment.
 
+This configuration will be loaded from a file named `config.yaml` next to the binary.
+
 ## Example Config
 
 The following configuration provides all relevant settings.
