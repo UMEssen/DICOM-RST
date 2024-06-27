@@ -85,7 +85,16 @@ impl<'a> CollectObjectsFluentBuilder<'a> {
 			match self.list_next(continuation_token).await {
 				Ok(response) => {
 					if let Some(response_objects) = response.contents {
-						objects.extend(response_objects);
+						for response_object in response_objects {
+							// skip non-dicom files
+							if response_object
+								.key
+								.as_ref()
+								.is_some_and(|k| k.ends_with(".dcm"))
+							{
+								objects.push(response_object);
+							}
+						}
 					}
 					if response.is_truncated.unwrap_or(false) {
 						continuation_token = response.next_continuation_token;
