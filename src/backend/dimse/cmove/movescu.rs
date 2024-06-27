@@ -10,7 +10,7 @@ use dicom::dictionary_std::{tags, uids};
 use dicom::object::mem::InMemElement;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 pub struct MoveServiceClassUser {
 	pool: AssociationPool,
@@ -39,7 +39,9 @@ impl MoveServiceClassUser {
 			})
 			.await?;
 
-		association.write_message(request, None, self.timeout).await?;
+		association
+			.write_message(request, None, self.timeout)
+			.await?;
 		trace!("Sent C-MOVE-RQ");
 
 		loop {
@@ -64,7 +66,17 @@ impl MoveServiceClassUser {
 				}
 				StatusType::Cancel => return Err(MoveError::Cancelled),
 				StatusType::Failure | StatusType::Warning => {
-					error!("C-MOVE sub-operation failed");
+					if let Some(error_comment) = response
+						.command
+						.get(tags::ERROR_COMMENT)
+						.map(InMemElement::string)
+						.and_then(Result::ok)
+					{
+						error!("C-MOVE sub-operation failed: {error_comment}");
+					} else {
+						error!("C-MOVE sub-operation failed");
+					}
+
 					return Err(MoveError::OperationFailed);
 				}
 			}

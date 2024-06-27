@@ -1,0 +1,262 @@
+openapi: 3.1.0
+info:
+  title: DICOM-RST
+  version: 0.2.0
+tags:
+  - name: DICOM-RST
+    description: DICOM-RST specific endpoints
+    externalDocs:
+      description: DICOM-RST
+      url: https://github.com/UMEssen/DICOM-RST
+  - name: QIDO-RS
+    description: Search for DICOM objects
+    externalDocs:
+      description: DICOM PS3.18 10.6
+      url: https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.6.html
+  - name: WADO-RS
+    description: Retrieve DICOM objects
+    externalDocs:
+      description: DICOM PS3.18 10.4
+      url: https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html
+  - name: STOW-RS
+    description: Store DICOM objects
+    externalDocs:
+      description: DICOM PS3.18 10.5
+      url: https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.5.html
+components:
+  parameters:
+    aet:
+      in: path
+      name: aet
+      description: Application Entity Title
+      required: true
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: "PACS"
+    study:
+      in: path
+      name: study
+      description: StudyInstanceUID of the study
+      required: true
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: 2.25.123
+    series:
+      in: path
+      name: series
+      description: SeriesInstanceUID of the series
+      required: true
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: 2.25.123.456
+    instance:
+      in: path
+      name: instance
+      description: SOPInstanceUID of the instance
+      required: true
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: 2.25.123.456.789
+paths:
+  /aets:
+    get:
+      summary: List of available AETs
+      tags:
+        - DICOM-RST
+      responses:
+        200:
+          description: A list of available AETs.
+          content:
+            application/json:
+              schema:
+                type: array
+              example: [ "CLINICAL", "RESEARCH" ]
+  /aets/{aet}:
+    get:
+      summary: AET Healthcheck
+      tags:
+        - DICOM-RST
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: Returns the connection status.
+          content:
+            text/plain:
+              example: "Connection is healthy"
+  /aets/{aet}/studies:
+    get:
+      tags:
+        - QIDO-RS
+      summary: Search for all studies
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: The query completed and any matching results are returned in the message body.
+          content:
+            application/json:
+              example: [ { "0020000D": { "vr": "UI", "Value": [ "1.2.3" ] } }, { "0020000D": { "vr": "UI", "Value": [ "4.5.6" ] } } ]
+        500:
+          description: Something went wrong.
+          content:
+            text/plain:
+              example: Backend error
+        503:
+          description: The QIDO-RS endpoint is disabled.
+    post:
+      tags:
+        - STOW-RS
+      summary: Store instances
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      requestBody:
+        content:
+          multipart/related;type=application/dicom:
+      responses:
+        200:
+          description: The STOW-RS Service successfully stored all the instances.
+          content:
+            application/json:
+              example: {
+                "00081199": {
+                  "vr": "SQ",
+                  ”Value": [
+                    {
+                      "00081155": {
+                        "vr": "UI",
+                        "Value": [ "1.2.3.4.5.6.7.8.9" ]
+                      }
+                    }
+                  ]
+                }
+              }
+        503:
+          description: The STOW-RS endpoint is disabled.
+        500:
+          description: Something went wrong.
+          content:
+            text/plain:
+              example: Failed to read multipart stream
+  /aets/{aet}/studies/{study}/series:
+    get:
+      tags:
+        - QIDO-RS
+      summary: Search for study's series
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: The query completed and any matching results are returned in the message body.
+        503:
+          description: The QIDO-RS endpoint is disabled.
+  /aets/{aet}/studies/{study}/series/{series}/instances:
+    get:
+      tags:
+        - QIDO-RS
+      summary: Search for study's series' instances
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: The query completed and any matching results are returned in the message body.
+        503:
+          description: The QIDO-RS endpoint is disabled.
+  /aets/{aet}/studies/{study}/instances:
+    get:
+      tags:
+        - QIDO-RS
+      summary: Search for study's instances
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: The query completed and any matching results are returned in the message body.
+        503:
+          description: The QIDO-RS endpoint is disabled.
+  /aets/{aet}/series:
+    get:
+      tags:
+        - QIDO-RS
+      summary: Search for all series
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: The query completed and any matching results are returned in the message body.
+        503:
+          description: The QIDO-RS endpoint is disabled.
+  /aets/{aet}/instances:
+    get:
+      tags:
+        - QIDO-RS
+      summary: Search for all instances
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        200:
+          description: The query completed and any matching results are returned in the message body.
+        503:
+          description: The QIDO-RS endpoint is disabled.
+  /aets/{aet}/studies/{study}:
+    get:
+      tags:
+        - WADO-RS
+      summary: Retrieve entire study
+      parameters:
+        - $ref: "#/components/parameters/aet"
+        - $ref: "#/components/parameters/study"
+      responses:
+        200:
+          description: The WADO-RS service successfully retrieved the requested resource.
+          content:
+            multipart/related;type=application/dicom:
+        500:
+          description: Something went wrong.
+        503:
+          description: The WADO-RS endpoint is disabled.
+  /aets/{aet}/studies/{study}/series/{series}:
+    get:
+      tags:
+        - WADO-RS
+      summary: Retrieve entire series
+      parameters:
+        - $ref: "#/components/parameters/aet"
+        - $ref: "#/components/parameters/study"
+        - $ref: "#/components/parameters/series"
+      responses:
+        200:
+          description: The WADO-RS service successfully retrieved the requested resource.
+          content:
+            multipart/related;type=application/dicom:
+        500:
+          description: Something went wrong.
+        503:
+          description: The WADO-RS endpoint is disabled.
+  /aets/{aet}/studies/{study}/series/{series}/instances/{instance}:
+    get:
+      tags:
+        - WADO-RS
+      summary: Retrieve instance
+      parameters:
+        - $ref: "#/components/parameters/aet"
+        - $ref: "#/components/parameters/study"
+        - $ref: "#/components/parameters/series"
+        - $ref: "#/components/parameters/instance"
+      responses:
+        200:
+          description: The WADO-RS service successfully retrieved the requested resource.
+          content:
+            multipart/related;type=application/dicom:
+        500:
+          description: Something went wrong.
+        503:
+          description: The WADO-RS endpoint is disabled.

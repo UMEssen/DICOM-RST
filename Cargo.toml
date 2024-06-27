@@ -1,6 +1,6 @@
 [package]
 name = "dicom-rst"
-version = "0.1.1"
+version = "0.2.0"
 description = "A robust DICOMweb server with swappable backend"
 edition = "2021"
 rust-version = "1.74.0"
@@ -11,8 +11,9 @@ license = "MIT"
 readme = "README.md"
 
 [features]
-default = ["dimse"]
+default = ["dimse", "s3"]
 dimse = []
+# TODO: feature-gate S3 dependencies
 s3 = []
 
 [dependencies]
@@ -37,7 +38,7 @@ hyper = { version = "1.2.0", features = ["full"] }
 http-body = { version = "1.0.0", features = [] }
 http-body-util = "0.1.1"
 hyper-util = { version = "0.1.3", features = ["full"] }
-axum = { version = "0.7.5", features = ["multipart"] }
+axum = { version = "0.7.5", features = ["multipart", "macros"] }
 axum-extra = { version = "0.9.3", features = ["query"] }
 axum-streams = { version = "0.14.0", features = ["json"] }
 futures = "0.3.30"
@@ -51,6 +52,10 @@ uuid = { version = "1.7.0", features = ["v4"] }
 bytes = "1.6.0"
 multer = "3.0.0"
 pin-project = "1.1.5"
+# S3 backend
+aws-config = { version = "1.5.1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.34.0"
+aws-credential-types = "1.2.0"
 
 [lints.rust]
 unsafe_code = "forbid"

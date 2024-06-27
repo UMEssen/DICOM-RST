@@ -1,6 +1,6 @@
 use crate::backend::dimse::association;
 use crate::backend::dimse::EchoServiceClassUser;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, BackendConfig};
 use crate::types::UI;
 use association::client::{ClientAssociation, ClientAssociationOptions};
 use std::collections::{HashMap, VecDeque};
@@ -261,25 +261,27 @@ impl AssociationPools {
 	pub fn new(config: &AppConfig) -> Self {
 		let mut pools = HashMap::with_capacity(config.server.dimse.len());
 		for ae_config in &config.aets {
-			let address = SocketAddr::from((ae_config.host, ae_config.port));
-			let mgr = AssociationManager {
-				calling_aet: config.server.aet.clone(),
-				address,
-				called_aet: ae_config.aet.clone(),
-			};
+			if let BackendConfig::Dimse(dimse_config) = &ae_config.backend {
+				let pool_size = dimse_config.pool.size;
+				let address = SocketAddr::from((dimse_config.host, dimse_config.port));
+				let mgr = AssociationManager {
+					calling_aet: config.server.aet.clone(),
+					address,
+					called_aet: ae_config.aet.clone(),
+				};
 
-			let pool = Pool::new(
-				mgr,
-				ae_config.pool.size,
-				Duration::from_millis(ae_config.pool.timeout),
-			);
-			pools.insert(ae_config.aet.clone(), pool);
+				let pool = Pool::new(
+					mgr,
+					dimse_config.pool.size,
+					Duration::from_millis(dimse_config.pool.timeout),
+				);
+				pools.insert(ae_config.aet.clone(), pool);
 
-			info!(
-				aet = ae_config.aet,
-				pool_size = ae_config.pool.size,
-				"Created new association pool"
-			);
+				info!(
+					aet = ae_config.aet,
+					pool_size, "Created new association pool"
+				);
+			}
 		}
 
 		Self(pools)
