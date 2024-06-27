@@ -7,7 +7,7 @@ on:
 
 env:
   INSTANCE: 'docs/drst'
-  ARTIFACT: 'webHelpDRST-all.zip'
+  ARTIFACT: 'webHelpDRST2-all.zip'
   DOCKER_VERSION: '241.16003'
 
 jobs:
