@@ -15,6 +15,7 @@ use dicom::object::FileDicomObject;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
+use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use tracing::info;
 use tracing::log::trace;
 
@@ -23,6 +24,7 @@ use super::S3ClientExt;
 pub struct S3WadoService {
 	s3: Arc<aws_sdk_s3::Client>,
 	concurrency: usize,
+	bucket: String
 }
 
 impl S3Credentials {
@@ -56,6 +58,10 @@ impl S3WadoService {
 			.region(config.region.clone().map(Region::new))
 			.behavior_version(BehaviorVersion::latest())
 			.retry_config(RetryConfig::adaptive())
+			// Causes issues with long-running requests and high concurrency. 
+			// It's okay to stall for some time. 
+			// TODO: Maybe make grace_period configurable instead?
+			.stalled_stream_protection(StalledStreamProtectionConfig::disabled())
 			.timeout_config(
 				TimeoutConfig::builder()
 					.connect_timeout(Duration::from_secs(5))
@@ -79,6 +85,7 @@ impl S3WadoService {
 
 		Self {
 			s3: Arc::new(s3),
+			bucket: config.bucket.clone(),
 			concurrency: config.concurrency,
 		}
 	}
@@ -91,13 +98,13 @@ impl WadoService for S3WadoService {
 		request: RetrieveInstanceRequest,
 	) -> Result<InstanceResponse, RetrieveError> {
 		let prefix = &request.query.to_s3_prefix();
-
 		info!("Requesting {} from S3", prefix);
 		let client = self.s3.clone();
-
+		let bucket = self.bucket.clone();
+		
 		let objects = client
 			.collect_objects()
-			.bucket("dicom")
+			.bucket(&self.bucket)
 			.prefix(prefix)
 			.send()
 			.await
@@ -109,11 +116,12 @@ impl WadoService for S3WadoService {
 		let stream = futures::stream::iter(objects)
 			.map(move |object| {
 				let client = client.clone();
+				let bucket = bucket.clone();
 				trace!("Streaming {}", object.key.as_ref().unwrap());
 				tokio::spawn(async move {
 					let object = client
 						.get_object()
-						.bucket("dicom")
+						.bucket(&bucket)
 						.key(object.key.unwrap())
 						.send()
 						.await
