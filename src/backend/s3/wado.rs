@@ -4,6 +4,7 @@ use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::config::{S3Config, S3Credentials};
 use async_trait::async_trait;
 use aws_config::retry::RetryConfig;
+use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_config::{AppName, Region, SdkConfig};
 use aws_credential_types::provider::future::ProvideCredentials as ProvideCredentialsAsync;
@@ -15,7 +16,6 @@ use dicom::object::FileDicomObject;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
-use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use tracing::info;
 use tracing::log::trace;
 
@@ -24,7 +24,7 @@ use super::S3ClientExt;
 pub struct S3WadoService {
 	s3: Arc<aws_sdk_s3::Client>,
 	concurrency: usize,
-	bucket: String
+	bucket: String,
 }
 
 impl S3Credentials {
@@ -52,14 +52,14 @@ impl ProvideCredentials for S3Credentials {
 impl S3WadoService {
 	pub fn new(config: &S3Config) -> Self {
 		info!("Using S3 endpoint {}", &config.endpoint);
-
-		let mut builder = SdkConfig::builder()
+		let mut builder = aws_sdk_s3::config::Builder::new()
 			.endpoint_url(&config.endpoint)
 			.region(config.region.clone().map(Region::new))
 			.behavior_version(BehaviorVersion::latest())
+			.force_path_style(true)
 			.retry_config(RetryConfig::adaptive())
-			// Causes issues with long-running requests and high concurrency. 
-			// It's okay to stall for some time. 
+			// Causes issues with long-running requests and high concurrency.
+			// It's okay to stall for some time.
 			// TODO: Maybe make grace_period configurable instead?
 			.stalled_stream_protection(StalledStreamProtectionConfig::disabled())
 			.timeout_config(
@@ -81,7 +81,7 @@ impl S3WadoService {
 		}
 
 		let sdk_config = builder.build();
-		let s3 = aws_sdk_s3::Client::new(&sdk_config);
+		let s3 = aws_sdk_s3::Client::from_conf(sdk_config);
 
 		Self {
 			s3: Arc::new(s3),
@@ -101,7 +101,7 @@ impl WadoService for S3WadoService {
 		info!("Requesting {} from S3", prefix);
 		let client = self.s3.clone();
 		let bucket = self.bucket.clone();
-		
+
 		let objects = client
 			.collect_objects()
 			.bucket(&self.bucket)
