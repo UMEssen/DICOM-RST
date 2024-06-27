@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  INSTANCE: 'docs/dcmrst'
-  ARTIFACT: 'webHelpDCMRST-all.zip'
+  INSTANCE: 'docs/drst'
+  ARTIFACT: 'webHelpDRST-all.zip'
   DOCKER_VERSION: '241.16003'
 
 jobs:
