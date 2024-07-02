@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `secret-key-env` and `access-key-env` options to load secrets from environment variables.
 
+### Fixed
+
+- Return HTTP 404 "Not Found" for empty DICOM streams
+
 ## [0.2.0] - 2024-06-27
 
 ### Added

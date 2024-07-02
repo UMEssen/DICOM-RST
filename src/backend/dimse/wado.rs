@@ -61,7 +61,9 @@ impl WadoService for DimseWadoService {
 			)
 			.await;
 
-		Ok(InstanceResponse { stream })
+		Ok(InstanceResponse {
+			stream: stream.boxed(),
+		})
 	}
 }
 
@@ -122,7 +124,7 @@ impl DimseWadoService {
 		aet: &str,
 		storescp_aet: &str,
 		identifier: InMemDicomObject,
-	) -> DicomMultipartStream<'static> {
+	) -> BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
 		let message_id = next_message_id();
 		let (tx, mut rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
 
@@ -174,7 +176,7 @@ impl DimseWadoService {
 			}
 		};
 
-		DicomMultipartStream::new(DropStream::new(rx_stream, subscription))
+		DropStream::new(rx_stream, subscription).boxed()
 	}
 }
 

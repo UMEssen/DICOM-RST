@@ -1,5 +1,5 @@
-use std::error::Error;
 use crate::api::wado::RetrieveInstanceRequest;
+use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::backend::ServiceProvider;
 use crate::types::UI;
 use crate::AppState;
@@ -9,6 +9,8 @@ use axum::http::{Response, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use futures::{StreamExt, TryStreamExt};
+use std::pin::Pin;
 use tracing::{error, instrument};
 
 /// HTTP Router for the Retrieve Transaction
@@ -59,24 +61,38 @@ async fn instance_resource(
 		let response = wado.retrieve(request).await;
 
 		match response {
-			Ok(response) => Response::builder()
-				.header(
-					CONTENT_DISPOSITION,
-					format!(r#"attachment; filename="{study_instance_uid}""#,),
-				)
-				.header(
-					CONTENT_TYPE,
-					r#"multipart/related; type="application/dicom"; boundary=boundary"#,
-				)
-				.body(Body::from_stream(response.stream))
-				.unwrap(),
+			Ok(response) => {
+				let mut stream = response.stream.peekable();
+				let pinned_stream = Pin::new(&mut stream);
+				if pinned_stream.peek().await.is_none() {
+					return StatusCode::NOT_FOUND.into_response();
+				}
+
+				Response::builder()
+					.header(
+						CONTENT_DISPOSITION,
+						format!(r#"attachment; filename="{study_instance_uid}""#,),
+					)
+					.header(
+						CONTENT_TYPE,
+						r#"multipart/related; type="application/dicom"; boundary=boundary"#,
+					)
+					.body(Body::from_stream(DicomMultipartStream::new(
+						stream.into_stream(),
+					)))
+					.unwrap()
+			}
 			Err(err) => {
 				error!("{err:?}");
 				(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
-			},
+			}
 		}
 	} else {
-		(StatusCode::SERVICE_UNAVAILABLE, "WADO-RS endpoint is disabled").into_response()
+		(
+			StatusCode::SERVICE_UNAVAILABLE,
+			"WADO-RS endpoint is disabled",
+		)
+			.into_response()
 	}
 }
 

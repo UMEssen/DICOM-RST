@@ -1,17 +1,19 @@
+use crate::backend::dimse::cmove::movescu::MoveError;
+use crate::types::{AE, UI};
+use crate::AppState;
 use async_trait::async_trait;
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{FromRef, FromRequestParts, Path, Query};
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
+use dicom::object::{FileDicomObject, InMemDicomObject};
+use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::num::ParseIntError;
 use std::str::FromStr;
+use std::sync::Arc;
 use thiserror::Error;
-
-use crate::backend::dimse::wado::DicomMultipartStream;
-use crate::types::{AE, UI};
-use crate::AppState;
 
 #[async_trait]
 pub trait WadoService: Send + Sync {
@@ -63,7 +65,7 @@ where
 }
 
 pub struct InstanceResponse {
-	pub stream: DicomMultipartStream<'static>,
+	pub stream: BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>>,
 }
 
 #[derive(Debug, Deserialize)]

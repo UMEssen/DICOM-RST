@@ -1,6 +1,5 @@
 use crate::api::wado::{InstanceResponse, RetrieveError, RetrieveInstanceRequest, WadoService};
 use crate::backend::dimse::cmove::movescu::MoveError;
-use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::config::{S3Config, S3EndpointStyle};
 use async_trait::async_trait;
 use aws_config::retry::RetryConfig;
@@ -99,6 +98,7 @@ impl WadoService for S3WadoService {
 						.await
 						.unwrap();
 
+					// TODO: Do not unwrap
 					let bytes = object.body.collect().await.unwrap().reader();
 					Result::<_, MoveError>::Ok(Arc::new(
 						FileDicomObject::from_reader(bytes).unwrap(),
@@ -112,7 +112,7 @@ impl WadoService for S3WadoService {
 			});
 
 		Ok(InstanceResponse {
-			stream: DicomMultipartStream::new(stream),
+			stream: stream.boxed(),
 		})
 	}
 }
