@@ -49,12 +49,12 @@ where
 		let ae_config = state
 			.config
 			.aets
-			.iter()
+			.into_iter()
 			.find(|aet_config| aet_config.aet == aet)
 			.ok_or_else(|| (StatusCode::NOT_FOUND, format!("Unknown AET {aet}")))?;
 
 		// TODO: Use a singleton to avoid re-creating on every request.
-		let provider = match &ae_config.backend {
+		let provider = match ae_config.backend {
 			#[cfg(feature = "dimse")]
 			BackendConfig::Dimse { .. } => {
 				let pool = state.pools.get(&ae_config.aet).expect("pool should exist");
@@ -86,7 +86,7 @@ where
 			},
 			BackendConfig::S3(config) => Self {
 				qido: None,
-				wado: Some(Box::new(S3WadoService::new(config))),
+				wado: Some(Box::new(S3WadoService::new(&config))),
 				stow: None,
 			},
 		};

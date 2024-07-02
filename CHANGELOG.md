@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2024-06-26
+## [Unreleased]
+
+### Added
+
+- Add `secret-key-env` and `access-key-env` options to load secrets from environment variables.
+
+## [0.2.0] - 2024-06-27
 
 ### Added
 
@@ -16,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `graceful-shutdown` config to enable or disable graceful shutdown for the HTTP server.
 
 ### Changed
+
 - Disabled endpoints will return 503 (Service Unavailable) instead of 404 (Not Found).
 
 ## [0.1.1] - 2024-05-22
@@ -41,3 +48,5 @@ It includes basic support for QIDO-RS, WADO-RS and STOW-RS for the DIMSE backend
     - Implement QIDO-RS using the C-FIND protocol
     - Implement WADO-RS using the C-MOVE protocol
     - Implement STOW-RS using the C-STORE protocol
+
+[0.2.0]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.2.0

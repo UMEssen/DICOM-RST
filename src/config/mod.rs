@@ -1,5 +1,6 @@
 use crate::types::AE;
 use crate::DEFAULT_AET;
+use aws_credential_types::Credentials as AwsCredentials;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
 use std::net::IpAddr;
@@ -57,7 +58,7 @@ pub struct S3Config {
 	pub region: Option<String>,
 	pub concurrency: usize,
 	#[serde(default)]
-	pub credentials: Option<S3Credentials>,
+	pub credentials: Option<S3CredentialsConfig>,
 	#[serde(default)]
 	pub endpoint_style: S3EndpointStyle,
 }
@@ -76,10 +77,49 @@ impl Default for S3EndpointStyle {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct S3Credentials {
-	pub secret_key: String,
-	pub access_key: String,
+#[serde(untagged)]
+pub enum S3CredentialsConfig {
+	#[serde(rename_all = "kebab-case")]
+	Env {
+		access_key_env: String,
+		secret_key_env: String,
+	},
+	#[serde(rename_all = "kebab-case")]
+	Plain {
+		access_key: String,
+		secret_key: String,
+	},
+}
+
+impl S3CredentialsConfig {
+	pub fn resolve(&self) -> Result<AwsCredentials, std::env::VarError> {
+		match &self {
+			Self::Plain {
+				access_key,
+				secret_key,
+			} => Ok(AwsCredentials::new(
+				access_key,
+				secret_key,
+				None,
+				None,
+				"AppConfigProvider",
+			)),
+			Self::Env {
+				access_key_env,
+				secret_key_env,
+			} => {
+				let access_key = std::env::var(access_key_env)?;
+				let secret_key = std::env::var(secret_key_env)?;
+				Ok(AwsCredentials::new(
+					access_key,
+					secret_key,
+					None,
+					None,
+					"EnvVarProvider",
+				))
+			}
+		}
+	}
 }
 
 #[derive(Debug, Clone, Deserialize)]

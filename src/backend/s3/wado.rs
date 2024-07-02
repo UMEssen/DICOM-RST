@@ -1,23 +1,20 @@
 use crate::api::wado::{InstanceResponse, RetrieveError, RetrieveInstanceRequest, WadoService};
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::backend::dimse::wado::DicomMultipartStream;
-use crate::config::{S3Config, S3Credentials, S3EndpointStyle};
+use crate::config::{S3Config, S3EndpointStyle};
 use async_trait::async_trait;
 use aws_config::retry::RetryConfig;
 use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_config::timeout::TimeoutConfig;
-use aws_config::{AppName, Region, SdkConfig};
-use aws_credential_types::provider::future::ProvideCredentials as ProvideCredentialsAsync;
-use aws_sdk_s3::config::{
-	BehaviorVersion, Credentials, ProvideCredentials, SharedCredentialsProvider,
-};
+use aws_config::{AppName, Region};
+use aws_sdk_s3::config::BehaviorVersion;
 use bytes::Buf;
 use dicom::object::FileDicomObject;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::info;
 use tracing::log::trace;
+use tracing::{info, warn};
 
 use super::S3ClientExt;
 
@@ -27,28 +24,6 @@ pub struct S3WadoService {
 	bucket: String,
 }
 
-impl S3Credentials {
-	#[allow(clippy::unused_async)]
-	async fn load(&self) -> aws_credential_types::provider::Result {
-		Ok(Credentials::new(
-			&self.access_key,
-			&self.secret_key,
-			None,
-			None,
-			"StaticCredentials",
-		))
-	}
-}
-
-impl ProvideCredentials for S3Credentials {
-	fn provide_credentials<'a>(&'a self) -> ProvideCredentialsAsync<'a>
-	where
-		Self: 'a,
-	{
-		ProvideCredentialsAsync::new(self.load())
-	}
-}
-
 impl S3WadoService {
 	pub fn new(config: &S3Config) -> Self {
 		info!("Using S3 endpoint {}", &config.endpoint);
@@ -56,7 +31,7 @@ impl S3WadoService {
 			.endpoint_url(&config.endpoint)
 			.region(config.region.clone().map(Region::new))
 			.behavior_version(BehaviorVersion::latest())
-			.force_path_style(matches!(config.endpoint_style,  S3EndpointStyle::Path))
+			.force_path_style(matches!(config.endpoint_style, S3EndpointStyle::Path))
 			.retry_config(RetryConfig::adaptive())
 			// Causes issues with long-running requests and high concurrency.
 			// It's okay to stall for some time.
@@ -72,12 +47,11 @@ impl S3WadoService {
 			.app_name(AppName::new("DICOM-RST").expect("valid app name"));
 
 		if let Some(credentials) = &config.credentials {
-			let credentials_provider = S3Credentials {
-				access_key: String::from(&credentials.access_key),
-				secret_key: String::from(&credentials.secret_key),
-			};
-			builder =
-				builder.credentials_provider(SharedCredentialsProvider::new(credentials_provider));
+			if let Ok(resolved_secrets) = credentials.resolve() {
+				builder = builder.credentials_provider(resolved_secrets);
+			} else {
+				warn!("Failed to resolve credentials. Check your environment variables.");
+			}
 		}
 
 		let sdk_config = builder.build();
