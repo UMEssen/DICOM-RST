@@ -1,31 +1,59 @@
 <div align="center">
 
-![DICOM-RST Logo[^1]](./dicom-rst-icon.png)
+![DICOM-RST Logo[^1]](docs/images/dicom-rst-icon.png)
 
 # DICOM-RST
 
-**A robust DICOMweb server with interchangeable backends**
+**DICOMweb-compatible gateway server with DIMSE and S3 implementations.**
 
-Developed as part of the [Open Medical Inference](https://diz.ikim.nrw/en/project/omi/) methodology platform.
-
-[Changelog](./CHANGELOG.md) | [Wiki](https://github.com/UMEssen/DICOM-RST/wiki)
+[Documentation](https://umessen.github.io/DICOM-RST/usage-guide.html) | [Changelog](./CHANGELOG.md)
 
 </div>
 
 ---
 
-> [!WARNING]  
-> This project is highly experimental.
->
-> We're still gathering information about potential compatibility issues with various PACS vendors.
 
-DICOM-RST implements a DICOMweb-compatible HTTP server with support for QIDO-RS, WADO-RS and STOW-RS.
+DICOM-RST is a robust DICOMweb-compatible gateway server that supports QIDO-RS, WADO-RS and STOW-RS independently of the
+PACS vendor, ensuring robust and performant transfers of large amounts of imaging data with high parallelism from
+multiple PACS to multiple clients.
 
-Currently, only the DIMSE backend is implemented, which translates DICOMweb requests into DIMSE-C operations.
+This project is part of
+the [Open Medical Inference](https://www.medizininformatik-initiative.de/de/omi-open-medical-inference) methodology
+platform.
+
+The OMI methodology platform aims to
+improve the quality of medical diagnoses and treatment decisions by using
+artificial intelligence (AI) to simplify time-consuming and repetitive tasks in medicine. To improve medical care, OMI
+is developing an open protocol for data exchange on the common framework of the Medical Informatics Initiative (MII).
+The project team is also actively involved in the MII interoperability working group.
+
+OMI uses innovative methods to make AI models remotely usable for different hospitals. For example, the project is
+creating the technical requirements for a hospital to be able to use the AI of other hospitals to analyze image data -
+without having to keep it in its own data center. The semantically interoperable exchange of multimodal healthcare data
+is also to be facilitated. OMI is particularly focused on image-based multimodal AI models, which have the potential to
+achieve significant progress in the field of medical research and care. Funding is provided by the Federal Ministry of
+Education and Research (BMBF).
+
+<img src="docs/images/mii-omi.jpg" alt="MII-Logo" width="128"/>
+<img src="docs/images/omi-logo.png" alt="OMI-Logo" width="128"/>
+
+## Available Backends
+
+DICOM-RST provides multiple backend implementations for the DICOMweb gateway server:
+
+**DIMSE**:
+The DIMSE backend translates DICOMweb requests into DIMSE-C messages (e.g. WADO-RS to C-MOVE).
+This is the preferred backend for most users due to the broad availability and support of DIMSE services in picture
+archiving and communication systems.
+
+**S3**:
+The experimental S3 backend downloads DICOM instances from S3-compatible storage. Currently, only the WADO-RS
+service is implemented.
 
 ## DICOMweb Features
 
-Actual support may vary depending on the features implemented by the origin server.
+> [!NOTE]  
+> Actual support may vary depending on the features implemented by the origin server.
 
 ### Retrieve DICOM objects (WADO-RS)
 
@@ -120,34 +148,6 @@ Returns a simple OK if the connection is still healthy.
 | Resource     | URI Template   |
 |--------------|----------------|
 | Health Check | `/aets/{aets}` |
-
-## Deployment
-
-### Docker
-
-```shell
-# Build the Docker image...
-docker build -t dicom-rst .
-
-# ...and run it!
-docker run dicom-rst
-```
-
-### Cargo
-
-Cargo makes it easy to build from source:
-
-```shell
-cargo install --git https://github.com/UMEssen/DICOM-RST dicom-rst
-``` 
-
-#### Crate Features
-
-- `dimse` (default): Enables the DIMSE backend
-- `s3`: Enables the S3 backend
-
-> [!TIP]
-> If the DIMSE backend is not needed, it can be removed by using the `--no-default-features` option.
 
 [^1]: The [DICOM-RST logo](./dicom-rst-icon.png) is adapted from
 the [Rust logo](https://github.com/rust-lang/rust-artwork)
