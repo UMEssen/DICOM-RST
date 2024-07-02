@@ -48,7 +48,7 @@ impl WadoService for DimseWadoService {
 			.receivers
 			.first() // TODO
 			.ok_or_else(|| RetrieveError::Backend {
-				source: Box::new(DimseRetrieveError::MissingReceiver {
+				source: anyhow::Error::new(DimseRetrieveError::MissingReceiver {
 					aet: request.query.aet.clone(),
 				}),
 			})?;

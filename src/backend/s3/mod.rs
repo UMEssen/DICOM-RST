@@ -104,7 +104,7 @@ impl<'a> CollectObjectsFluentBuilder<'a> {
 				}
 				Err(err) => {
 					error!("{err:?}");
-					return Err(CollectObjectError::SdkError(Box::new(err)));
+					return Err(anyhow::Error::new(err));
 				}
 			}
 		}
@@ -113,8 +113,4 @@ impl<'a> CollectObjectsFluentBuilder<'a> {
 	}
 }
 
-#[derive(Debug, Error)]
-pub enum CollectObjectError {
-	#[error(transparent)]
-	SdkError(Box<dyn std::error::Error>),
-}
+type CollectObjectError = anyhow::Error;

@@ -24,9 +24,7 @@ pub trait WadoService: Send + Sync {
 #[derive(Debug, Error)]
 pub enum RetrieveError {
 	#[error(transparent)]
-	Backend {
-		source: Box<dyn std::error::Error>,
-	},
+	Backend { source: anyhow::Error },
 }
 
 pub type RetrieveInstanceRequest = RetrieveRequest<InstanceQueryParameters>;

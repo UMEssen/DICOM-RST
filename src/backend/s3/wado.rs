@@ -82,9 +82,7 @@ impl WadoService for S3WadoService {
 			.prefix(prefix)
 			.send()
 			.await
-			.map_err(|err| RetrieveError::Backend {
-				source: Box::new(err),
-			})?;
+			.map_err(|err| RetrieveError::Backend { source: err })?;
 		info!("Found {} objects.", objects.len());
 
 		let stream = futures::stream::iter(objects)
