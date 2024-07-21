@@ -16,14 +16,14 @@ telemetry:
 server:
   aet: DICOM-RST
   http:
-    host: 0.0.0.0
+    interface: 0.0.0.0
     port: 8080
     max-upload-size: 50000000
     request-timeout: 60000
     graceful-shutdown: true
   dimse:
     - aet: DICOM-RST
-      host: 0.0.0.0
+      interface: 0.0.0.0
       port: 7001
       uncompressed: true
 aets:
@@ -89,7 +89,7 @@ server:
 ```yaml
 server:
   http:
-    host: 0.0.0.0
+    interface: 0.0.0.0
     port: 8080
     max-upload-size: 50000000
     request-timeout: 60000
@@ -97,8 +97,8 @@ server:
 ```
 
 <deflist>
-    <def title="server.http.host" id="server.http.host">
-        The host address of the server, Uses <code>0.0.0.0</code> by default.
+    <def title="server.http.interface" id="server.http.interface">
+        The interface the HTTP server should bind to. Uses <code>0.0.0.0</code> by default.
     </def>
     <def title="server.http.port" id="server.http.port">
         The port for the HTTP server. Uses <code>8080</code> by default.
@@ -126,7 +126,7 @@ You can spawn multiple DIMSE server that will act as the STORE-SCP.
 server:
   dimse:
     - aet: MY-STORE-SCP
-      host: 0.0.0.0
+      interface: 0.0.0.0
       port: 7001
       uncompressed: true
 ```
@@ -135,8 +135,8 @@ server:
     <def title="server.dimse.aet" id="server.dimse.aet">
     The AET for this DIMSE server. Make sure that this AET is whitelisted and is a valid destination for C-MOVEs.
     </def>
-    <def title="server.dimse.host" id="server.dimse.host">
-    The host address for this DIMSE server.
+    <def title="server.dimse.interface" id="server.dimse.interface">
+    The interface this DIMSE server should bind to.
     </def>
     <def title="server.dimse.port" id="server.dimse.port">
     The port for this DIMSE server.
