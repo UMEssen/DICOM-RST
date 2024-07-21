@@ -5,15 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1]
 
 ### Added
 
 - Add `secret-key-env` and `access-key-env` options to load secrets from environment variables.
+- Include [dicom-test-files](https://github.com/robyoung/dicom-test-files) as a git submodule.
+- Add docker compose for a simple setup scenario with Orthanc.
 
 ### Fixed
 
-- Return HTTP 404 "Not Found" for empty DICOM streams
+- Return HTTP 404 "Not Found" for empty DICOM streams.
+
+### Changed
+
+- Rename `server.dimse.host` and `server.http.host` config key to `interface`.
+- `aets.aet.host` accepts host names now, resolving to the first IP address.
 
 ## [0.2.0] - 2024-06-27
 
@@ -54,3 +61,4 @@ It includes basic support for QIDO-RS, WADO-RS and STOW-RS for the DIMSE backend
     - Implement STOW-RS using the C-STORE protocol
 
 [0.2.0]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.2.0
+[0.2.1]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.2.1
