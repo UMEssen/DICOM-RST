@@ -1,0 +1,33 @@
+telemetry:
+  # sentry: $SENTRY_DSN
+  level: INFO
+server:
+  aet: DICOM-RST
+  http:
+    interface: 0.0.0.0
+    port: 8080
+    max-upload-size: 50000000
+    request-timeout: 60000
+    graceful-shutdown: true
+  dimse:
+    - aet: DICOM-RST
+      interface: 0.0.0.0
+      port: 7001
+      uncompressed: true
+aets:
+  - aet: ORTHANC
+    host: host.docker.internal
+    port: 4242
+    backend: DIMSE
+    pool:
+      size: 16
+      timeout: 10000
+    qido-rs:
+      timeout: 10000
+    stow-rs:
+      timeout: 10000
+    wado-rs:
+      timeout: 30000
+      mode: concurrent
+      receivers:
+        - DICOM-RST
