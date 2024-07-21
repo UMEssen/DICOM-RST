@@ -42,7 +42,7 @@ impl StoreServiceClassProvider {
 	}
 
 	pub async fn spawn(&self) -> anyhow::Result<()> {
-		let address = SocketAddr::from((self.inner.config.host, self.inner.config.port));
+		let address = SocketAddr::from((self.inner.config.interface, self.inner.config.port));
 		let listener = TcpListener::bind(&address).await?;
 		info!("Started Store Service Class Provider on {}", address);
 		loop {

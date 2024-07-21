@@ -4,14 +4,14 @@ telemetry:
 server:
   aet: DICOM-RST
   http:
-    host: 0.0.0.0
+    interface: 0.0.0.0
     port: 8080
     max-upload-size: 50000000
     request-timeout: 60000
     graceful-shutdown: true
   dimse:
     - aet: DICOM-RST
-      host: 0.0.0.0
+      interface: 0.0.0.0
       port: 7001
       uncompressed: true
 aets:

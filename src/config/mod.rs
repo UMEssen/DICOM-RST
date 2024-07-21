@@ -43,7 +43,7 @@ pub enum BackendConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct DimseConfig {
-	pub host: IpAddr,
+	pub host: String,
 	pub port: u16,
 	#[serde(default)]
 	pub pool: PoolConfig,
@@ -221,7 +221,7 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct HttpServerConfig {
-	pub host: IpAddr,
+	pub interface: IpAddr,
 	pub port: u16,
 	pub max_upload_size: usize,
 	pub request_timeout: u64,
@@ -231,7 +231,7 @@ pub struct HttpServerConfig {
 impl Default for HttpServerConfig {
 	fn default() -> Self {
 		Self {
-			host: IpAddr::from([0, 0, 0, 0]),
+			interface: IpAddr::from([0, 0, 0, 0]),
 			port: 8080,
 			graceful_shutdown: true,
 			max_upload_size: 50_000_000, // 50 MB
@@ -243,7 +243,7 @@ impl Default for HttpServerConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct DimseServerConfig {
-	pub host: IpAddr,
+	pub interface: IpAddr,
 	#[serde(default = "DimseServerConfig::default_aet")]
 	pub aet: AE,
 	#[serde(default = "DimseServerConfig::default_port")]
@@ -285,7 +285,7 @@ impl Default for Backend {
 impl Default for DimseServerConfig {
 	fn default() -> Self {
 		Self {
-			host: IpAddr::from([0, 0, 0, 0]),
+			interface: IpAddr::from([0, 0, 0, 0]),
 			port: 7001,
 			aet: AE::from(DEFAULT_AET),
 			uncompressed: true,

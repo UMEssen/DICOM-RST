@@ -4,7 +4,7 @@ use crate::config::{AppConfig, BackendConfig};
 use crate::types::UI;
 use association::client::{ClientAssociation, ClientAssociationOptions};
 use std::collections::{HashMap, VecDeque};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::ops::Deref;
 
 use futures::TryFutureExt;
@@ -263,7 +263,21 @@ impl AssociationPools {
 		for ae_config in &config.aets {
 			if let BackendConfig::Dimse(dimse_config) = &ae_config.backend {
 				let pool_size = dimse_config.pool.size;
-				let address = SocketAddr::from((dimse_config.host, dimse_config.port));
+
+				// Hacky: there is no function in the standard library to lookup host names.
+				// to_socket_addrs requires a port, so we're using a dummy port of :0.
+				// This port has no meaning and is removed when collecting the IP addresses.
+				let hosts: Vec<IpAddr> = format!("{}:0", dimse_config.host)
+					.to_socket_addrs()
+					.unwrap_or_default()
+					.map(|addr| addr.ip())
+					.collect();
+
+				let Some(host_ip) = hosts.first() else {
+					panic!("Could not resolve hostname {}", dimse_config.host)
+				};
+
+				let address = SocketAddr::new(*host_ip, dimse_config.port);
 				let mgr = AssociationManager {
 					calling_aet: config.server.aet.clone(),
 					address,
