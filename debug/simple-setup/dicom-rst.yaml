@@ -16,7 +16,7 @@ server:
       uncompressed: true
 aets:
   - aet: ORTHANC
-    host: host.docker.internal
+    host: orthanc
     port: 4242
     backend: DIMSE
     pool:

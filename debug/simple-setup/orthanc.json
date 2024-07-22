@@ -3,7 +3,7 @@
   "AuthenticationEnabled": false,
   "HasWadoRsUniversalTransferSyntax": false,
   "DicomModalities": {
-    "DICOM-RST": ["DICOM-RST", "host.docker.internal", 7001]
+    "DICOM-RST": ["DICOM-RST", "dicom-rst", 7001]
   },
   "Plugins": [
     "/usr/local/share/orthanc/plugins/libOrthancDicomWeb.so",
@@ -15,7 +15,7 @@
   },
   "DicomWeb" : {
     "Servers" : {
-      "DICOM-RST" : [ "http://host.docker.internal:8080/pacs/ORTHANC" ]
+      "DICOM-RST" : [ "http://dicom-rst:8080/pacs/ORTHANC" ]
     }
   }
 }
