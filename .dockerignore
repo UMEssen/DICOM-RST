@@ -2,3 +2,4 @@
 target
 debug
 docs
+tests/dicom-test-files
