@@ -4,6 +4,36 @@
 
 This configuration will be loaded from a file named `config.yaml` next to the binary.
 
+When using Docker, you can use [volumes](https://docs.docker.com/storage/volumes/) to mount a local config file into the
+container.
+In the container, the config file is always located in the root directory.
+The `:ro` option will mount the file into the container as read-only.
+
+<tabs>
+    <tab id="docker-compose" title="Docker Compose">
+        <code-block lang="yaml">
+            services:
+              dicom-rst:
+                image: ghcr.io/umessen/dicom-rst:v0.2.1
+                ports:
+                  - "8080:8080"
+                  - "7001:7001"
+                volumes:
+                  - ./dicom-rst.yaml:/config.yaml:ro
+        </code-block>
+    </tab>
+    <tab id="docker-run" title="Docker Run">
+        <code-block lang="shell">
+            docker run \
+            -p 8080:8080 \
+            -p 7001:7001 \
+            -v ./dicom-rst.yaml:/config.yaml:ro \ 
+            ghcr.io/umessen/dicom-rst:latest
+        </code-block>
+    </tab>
+
+</tabs>
+
 ## Example Config
 
 The following configuration provides all relevant settings.
