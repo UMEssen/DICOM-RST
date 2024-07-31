@@ -29,7 +29,7 @@ You'll see a list of published releases. Click on a version you would like to us
 </step>
 <step>
 <p>Start the container:</p>
-<code-block lang="shell">docker run -p 8080:8080 -p 7001:7001 dicom-rst</code-block>
+<code-block lang="shell">docker run -p 8080:8080 -p 7001:7001 ghcr.io/umessen/dicom-rst:latest</code-block>
 <p>Make sure to expose the HTTP server (port 8080 by default) and the DIMSE server (port 7001 by default).</p>
 </step>
 </procedure>
