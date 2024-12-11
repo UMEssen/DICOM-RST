@@ -18,44 +18,44 @@ s3 = []
 
 [dependencies]
 # DICOM processing
-dicom = "0.7.0"
-dicom-json = "0.7.0"
-sentry = { version = "0.32.2", features = ["tracing"] }
+dicom = "0.8.0"
+dicom-json = "0.8.0"
+sentry = { version = "0.35.0", features = ["tracing"] }
 
 # Serialization
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.115"
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"
 # Logging
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 # Convenient error handling
-thiserror = "1.0.58"
-anyhow = "1.0.82"
+thiserror = "2.0.6"
+anyhow = "1.0.94"
 
-tokio = { version = "1.37.0", features = ["full"] }
-config = { version = "0.14.0", features = ["toml"] }
+tokio = { version = "1.42.0", features = ["full"] }
+config = { version = "0.14.1", features = ["toml"] }
 hyper = { version = "1.2.0", features = ["full"] }
 http-body = { version = "1.0.0", features = [] }
 http-body-util = "0.1.1"
 hyper-util = { version = "0.1.3", features = ["full"] }
-axum = { version = "0.7.5", features = ["multipart", "macros"] }
-axum-extra = { version = "0.9.3", features = ["query"] }
-axum-streams = { version = "0.14.0", features = ["json"] }
-futures = "0.3.30"
+axum = { version = "0.7.9", features = ["multipart", "macros"] }
+axum-extra = { version = "0.9.6", features = ["query"] }
+axum-streams = { version = "0.19.0", features = ["json"] }
+futures = "0.3.31"
 mime = "0.3.17"
-tower-http = { version = "0.5.2", features = ["trace", "cors", "timeout"] }
-tower = { version = "0.4.13", features = ["limit"] }
-async-trait = "0.1.80"
-async-stream = "0.3.5"
+tower-http = { version = "0.6.2", features = ["trace", "cors", "timeout"] }
+tower = { version = "0.5.1", features = ["limit"] }
+async-trait = "0.1.83"
+async-stream = "0.3.6"
 rand = "0.8.5"
-uuid = { version = "1.7.0", features = ["v4"] }
-bytes = "1.6.0"
-multer = "3.0.0"
-pin-project = "1.1.5"
+uuid = { version = "1.11.0", features = ["v4"] }
+bytes = "1.9.0"
+multer = "3.1.0"
+pin-project = "1.1.7"
 # S3 backend
-aws-config = { version = "1.5.1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.34.0"
-aws-credential-types = "1.2.0"
+aws-config = { version = "1.5.10", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.65.0"
+aws-credential-types = "1.2.1"
 
 [lints.rust]
 unsafe_code = "forbid"
