@@ -18,7 +18,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, error, info, trace, warn, info_span, instrument, Instrument};
+use tracing::{debug, error, info, info_span, instrument, trace, warn, Instrument};
 
 pub struct StoreServiceClassProvider {
 	inner: Arc<InnerStoreServiceClassProvider>,

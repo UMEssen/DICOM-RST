@@ -13,12 +13,9 @@ use association::pool::AssociationPools;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::response::Response;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::runtime::Handle;
 use tokio::signal;
-use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace;
@@ -153,7 +150,11 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		)))
 		.with_state(app_state);
 
-	let HttpServerConfig { interface: host, port, .. } = config.server.http;
+	let HttpServerConfig {
+		interface: host,
+		port,
+		..
+	} = config.server.http;
 	let addr = SocketAddr::from((host, port));
 	let listener = TcpListener::bind(addr).await?;
 

@@ -13,7 +13,7 @@ use dicom::object::InMemDicomObject;
 use futures::Stream;
 use std::time::Duration;
 use thiserror::Error;
-use tracing::{debug, trace};
+use tracing::trace;
 
 pub struct FindServiceClassUser {
 	pool: AssociationPool,

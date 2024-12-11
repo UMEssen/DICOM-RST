@@ -5,7 +5,6 @@ use aws_sdk_s3 as s3;
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::list_objects_v2::{ListObjectsV2Error, ListObjectsV2Output};
 use aws_sdk_s3::types::Object;
-use thiserror::Error;
 use tracing::error;
 
 pub trait S3ClientExt {
