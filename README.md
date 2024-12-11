@@ -27,15 +27,10 @@ artificial intelligence (AI) to simplify time-consuming and repetitive tasks in 
 is developing an open protocol for data exchange on the common framework of the Medical Informatics Initiative (MII).
 The project team is also actively involved in the MII interoperability working group.
 
-OMI uses innovative methods to make AI models remotely usable for different hospitals. For example, the project is
-creating the technical requirements for a hospital to be able to use the AI of other hospitals to analyze image data -
-without having to keep it in its own data center. The semantically interoperable exchange of multimodal healthcare data
-is also to be facilitated. OMI is particularly focused on image-based multimodal AI models, which have the potential to
-achieve significant progress in the field of medical research and care. Funding is provided by the Federal Ministry of
-Education and Research (BMBF).
-
-<img src="docs/images/mii-omi.jpg" alt="MII-Logo" width="128"/>
-<img src="docs/images/omi-logo.png" alt="OMI-Logo" width="128"/>
+<div align="center">
+    <img src="docs/images/mii-omi.svg" alt="MII-Logo" width="128"/>
+    <img src="docs/images/omi-logo.png" alt="OMI-Logo" width="128"/>
+</div>
 
 ## Available Backends
 

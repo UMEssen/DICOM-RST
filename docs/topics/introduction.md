@@ -21,7 +21,7 @@ is also to be facilitated. OMI is particularly focused on image-based multimodal
 achieve significant progress in the field of medical research and care. Funding is provided by the Federal Ministry of
 Education and Research (BMBF).
 
-<img src="mii-omi.jpg" alt="MII-Logo" width="128" style="inline"/>
+<img src="mii-omi.svg" alt="MII-Logo" width="128" style="inline"/>
 <img src="omi-logo.png" alt="OMI-Logo" width="128" style="inline"/>
 
 This documentation provides a reference for the configuration file, the provided endpoints and a user guide for
