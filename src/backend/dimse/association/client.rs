@@ -30,7 +30,7 @@ pub struct ClientAssociationOptions {
 
 impl ClientAssociation {
 	fn chunked_send(
-		association: &mut dicom::ul::ClientAssociation,
+		association: &mut dicom::ul::ClientAssociation<TcpStream>,
 		pdu: &Pdu,
 	) -> Result<(), AssociationError> {
 		match &pdu {
