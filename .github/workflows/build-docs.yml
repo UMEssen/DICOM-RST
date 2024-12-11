@@ -15,7 +15,7 @@ permissions:
 env:
   INSTANCE: 'docs/drst'
   ARTIFACT: 'webHelpDRST2-all.zip'
-  DOCKER_VERSION: '241.16003'
+  DOCKER_VERSION: '243.21565'
 
 jobs:
   build:
