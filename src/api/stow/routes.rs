@@ -84,7 +84,11 @@ async fn studies(
 				.unwrap()
 		}
 	} else {
-		(StatusCode::SERVICE_UNAVAILABLE, "STOW-RS endpoint is disabled").into_response()
+		(
+			StatusCode::SERVICE_UNAVAILABLE,
+			"STOW-RS endpoint is disabled",
+		)
+			.into_response()
 	}
 }
 

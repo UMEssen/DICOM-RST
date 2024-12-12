@@ -80,7 +80,7 @@ impl StoreServiceClassProvider {
 		let options = ServerAssociationOptions {
 			aet: String::from("DICOM-RST"),
 			tcp_stream,
-			uncompressed: inner.config.uncompressed
+			uncompressed: inner.config.uncompressed,
 		};
 		let association = ServerAssociation::new(options).await?;
 
@@ -90,8 +90,11 @@ impl StoreServiceClassProvider {
 				.presentation_contexts()
 				.first()
 				.context("No presentation context available")?;
-			debug!("Used transfer syntax {} to read message", pctx.transfer_syntax);
-			
+			debug!(
+				"Used transfer syntax {} to read message",
+				pctx.transfer_syntax
+			);
+
 			let command_field = message
 				.command
 				.get(tags::COMMAND_FIELD)

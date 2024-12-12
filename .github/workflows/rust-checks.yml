@@ -1,0 +1,39 @@
+name: rust-checks
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  check-rust-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy,rustfmt
+          override: true
+      - uses: Swatinem/rust-cache@v1
+      - run: cargo install clippy-sarif sarif-fmt
+      - name: Print versions
+        run: |
+          rustc --version
+          cargo fmt --version
+          cargo clippy --version
+
+      - name: cargo check
+        run: cargo check
+
+      - name: cargo test
+        run: cargo test
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features --message-format=json | clippy-sarif | tee results.sarif | sarif-fmt
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v1
+        with:
+          sarif_file: results.sarif
