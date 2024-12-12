@@ -82,7 +82,7 @@ async fn all_studies(
 #[instrument(skip_all)]
 async fn studys_series(
 	provider: ServiceProvider,
-	Path((aet, study)): Path<(String, String)>,
+	Path((_aet, study)): Path<(String, String)>,
 	Query(parameters): Query<QueryParameters>,
 ) -> impl IntoResponse {
 	let request = SearchRequest {
@@ -100,7 +100,7 @@ async fn studys_series(
 #[instrument(skip_all)]
 async fn studys_series_instances(
 	provider: ServiceProvider,
-	Path((aet, study, series)): Path<(String, String, String)>,
+	Path((_aet, study, series)): Path<(String, String, String)>,
 	Query(parameters): Query<QueryParameters>,
 ) -> impl IntoResponse {
 	let request = SearchRequest {
@@ -118,7 +118,7 @@ async fn studys_series_instances(
 #[instrument(skip_all)]
 async fn studys_instances(
 	provider: ServiceProvider,
-	Path((aet, study)): Path<(String, String)>,
+	Path((_aet, study)): Path<(String, String)>,
 	Query(parameters): Query<QueryParameters>,
 ) -> impl IntoResponse {
 	let request = SearchRequest {

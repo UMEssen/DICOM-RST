@@ -274,10 +274,12 @@ pub enum Backend {
 }
 
 impl Default for Backend {
+	#[cfg(feature = "dimse")]
 	fn default() -> Self {
-		#[cfg(feature = "dimse")]
-		return Self::Dimse;
-
+		Self::Dimse
+	}
+	#[cfg(not(feature = "dimse"))]
+	fn default() -> Self {
 		Self::Disabled
 	}
 }
