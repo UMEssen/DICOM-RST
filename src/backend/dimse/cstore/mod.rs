@@ -54,7 +54,7 @@ impl From<CompositeStoreRequest> for DicomMessage {
 pub struct CompositeStoreResponse {
 	pub message_id: US,
 	pub sop_class_uid: UI,
-	pub sop_instance_uid: UI
+	pub sop_instance_uid: UI,
 }
 
 impl From<CompositeStoreResponse> for DicomMessage {

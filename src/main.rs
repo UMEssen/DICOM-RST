@@ -153,7 +153,11 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		)))
 		.with_state(app_state);
 
-	let HttpServerConfig { interface: host, port, .. } = config.server.http;
+	let HttpServerConfig {
+		interface: host,
+		port,
+		..
+	} = config.server.http;
 	let addr = SocketAddr::from((host, port));
 	let listener = TcpListener::bind(addr).await?;
 
