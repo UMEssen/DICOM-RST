@@ -180,10 +180,15 @@ impl<'a> Visitor<'a> for IncludeFieldVisitor {
 		if v.to_lowercase() == "all" {
 			Ok(IncludeField::All)
 		} else {
-			let entry = StandardDataDictionary
-				.by_expr(v)
-				.ok_or_else(|| E::custom(format!("unknown tag {v}")))?;
-			Ok(IncludeField::List(vec![entry.tag()]))
+			v.split(',')
+				.map(|v| {
+					let entry = StandardDataDictionary
+						.by_expr(v)
+						.ok_or_else(|| E::custom(format!("unknown tag {v}")))?;
+					Ok(entry.tag())
+				})
+				.collect::<Result<Vec<_>, _>>()
+				.map(IncludeField::List)
 		}
 	}
 
@@ -293,6 +298,24 @@ mod tests {
 					tags::PATIENT_NAME,
 					PrimitiveValue::from("MUSTERMANN^MAX")
 				)]),
+				fuzzy_matching: false,
+			}
+		);
+	}
+
+	#[test]
+	fn parse_query_params_multiple_includefield() {
+		let uri =
+			Uri::from_static("http://test?offset=1&limit=42&includefield=PatientWeight,00100010");
+		let Query(params) = Query::<QueryParameters>::try_from_uri(&uri).unwrap();
+
+		assert_eq!(
+			params,
+			QueryParameters {
+				offset: 1,
+				limit: 42,
+				include_field: IncludeField::List(vec![tags::PATIENT_WEIGHT, tags::PATIENT_NAME]),
+				match_criteria: MatchCriteria(vec![]),
 				fuzzy_matching: false,
 			}
 		);
