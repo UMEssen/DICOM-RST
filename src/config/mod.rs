@@ -29,6 +29,8 @@ pub struct ApplicationEntityConfig {
 	pub wado: WadoConfig,
 	#[serde(default, rename = "stow-rs")]
 	pub stow: StowConfig,
+	#[serde(default, rename = "mwl-rs")]
+	pub mwl: MwlConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -180,6 +182,18 @@ pub struct StowConfig {
 }
 
 impl Default for StowConfig {
+	fn default() -> Self {
+		Self { timeout: 30_000 }
+	}
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct MwlConfig {
+	pub timeout: u64,
+}
+
+impl Default for MwlConfig {
 	fn default() -> Self {
 		Self { timeout: 30_000 }
 	}

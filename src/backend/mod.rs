@@ -1,3 +1,4 @@
+use crate::api::mwl::MwlService;
 use crate::api::qido::QidoService;
 use crate::api::stow::StowService;
 use crate::api::wado::WadoService;
@@ -18,6 +19,7 @@ pub struct ServiceProvider {
 	pub qido: Option<Box<dyn QidoService>>,
 	pub wado: Option<Box<dyn WadoService>>,
 	pub stow: Option<Box<dyn StowService>>,
+	pub mwl: Option<Box<dyn MwlService>>,
 }
 
 impl<S> FromRequestParts<S> for ServiceProvider
@@ -49,6 +51,7 @@ where
 		// TODO: Use a singleton to avoid re-creating on every request.
 		let provider = match ae_config.backend {
 			BackendConfig::Dimse { .. } => {
+				use crate::backend::dimse::mwl::DimseMwlService;
 				use crate::backend::dimse::qido::DimseQidoService;
 				use crate::backend::dimse::stow::DimseStowService;
 				use crate::backend::dimse::wado::DimseWadoService;
@@ -69,6 +72,10 @@ where
 					stow: Some(Box::new(DimseStowService::new(
 						pool.to_owned(),
 						Duration::from_millis(ae_config.stow.timeout),
+					))),
+					mwl: Some(Box::new(DimseMwlService::new(
+						pool.to_owned(),
+						Duration::from_millis(ae_config.mwl.timeout),
 					))),
 				}
 			}
