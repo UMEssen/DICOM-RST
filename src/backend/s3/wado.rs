@@ -1,4 +1,7 @@
-use crate::api::wado::{InstanceResponse, RetrieveError, RetrieveInstanceRequest, WadoService};
+use crate::api::wado::{
+	InstanceResponse, RenderedRequest, RenderedResponse, RetrieveError, RetrieveInstanceRequest,
+	WadoService,
+};
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::config::{S3Config, S3EndpointStyle};
 use async_trait::async_trait;
@@ -114,5 +117,9 @@ impl WadoService for S3WadoService {
 		Ok(InstanceResponse {
 			stream: stream.boxed(),
 		})
+	}
+
+	async fn render(&self, _request: RenderedRequest) -> Result<RenderedResponse, RetrieveError> {
+		unimplemented!()
 	}
 }

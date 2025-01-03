@@ -4,7 +4,11 @@ version = "0.3.0-beta.1"
 description = "A robust DICOMweb server with swappable backend"
 edition = "2021"
 rust-version = "1.74.0"
-categories = ["multimedia", "network-programming", "web-programming::http-server"]
+categories = [
+  "multimedia",
+  "network-programming",
+  "web-programming::http-server",
+]
 keywords = ["dicom", "dicomweb", "healthcare", "medical"]
 repository = "https://github.com/UMEssen/DICOM-RST"
 license = "MIT"
@@ -20,6 +24,7 @@ s3 = []
 # DICOM processing
 dicom = "0.8.0"
 dicom-json = "0.8.0"
+dicom-pixeldata = { version = "0.8.0", features = ["image"] }
 sentry = { version = "0.35.0", features = ["tracing"] }
 
 # Serialization

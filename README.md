@@ -62,11 +62,23 @@ https://www.dicomstandard.org/using/dicomweb/retrieve-wado-rs-and-wado-uri
 
 #### Rendered Resources
 
-❌ Rendered Resourced are not supported.
+| Description      | Path                                                            | Support Status |
+|------------------|-----------------------------------------------------------------|:--------------:|
+| Study Instances  | `studies/{study}/rendered`                                      |       ✅        |
+| Series Instances | `studies/{study}/series/{series}/rendered`                      |       ✅        |
+| Instance         | `studies/{study}/series/{series}/instances/{instance}/rendered` |       ✅        |
+
+For rendering the first instance with pixeldata is used
 
 #### Thumbnail Resources
 
-❌ Thumbnail Resources are not supported.
+| Description      | Path                                                             | Support Status |
+|------------------|------------------------------------------------------------------|:--------------:|
+| Study Instances  | `studies/{study}/thumbnail`                                      |       ✅        |
+| Series Instances | `studies/{study}/series/{series}/thumbnail`                      |       ✅        |
+| Instance         | `studies/{study}/series/{series}/instances/{instance}/thumbnail` |       ✅        |
+
+The thumbnail resources just perform a 303 redirect to their rendered counterparts
 
 #### Bulkdata Resources
 
