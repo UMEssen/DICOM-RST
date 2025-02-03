@@ -20,7 +20,7 @@ use super::{MwlQueryParameters, MwlRequestHeaderFields, MwlSearchError, MwlSearc
 #[rustfmt::skip]
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/modality-worklist", get(all_workitems))
+        .route("/modality-scheduled-procedure-steps", get(all_workitems))
 }
 
 // MWL-RS implementation
