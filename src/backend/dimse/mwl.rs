@@ -7,12 +7,10 @@ use crate::backend::dimse::cfind::findscu::{FindServiceClassUser, FindServiceCla
 use crate::backend::dimse::next_message_id;
 use crate::types::Priority;
 use crate::types::QueryInformationModel;
-use crate::types::QueryRetrieveLevel;
 use association::pool::AssociationPool;
 use async_trait::async_trait;
 use dicom::core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
 use dicom::core::PrimitiveValue;
-use dicom::dictionary_std::tags;
 use dicom::object::InMemDicomObject;
 use futures::{StreamExt, TryStreamExt};
 use std::time::Duration;
