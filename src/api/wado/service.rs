@@ -43,7 +43,6 @@ pub struct RetrieveRequest<Q: QueryParameters> {
 	pub headers: RequestHeaderFields,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for RetrieveInstanceRequest
 where
 	AppState: FromRef<S>,
@@ -70,7 +69,6 @@ where
 	}
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for RenderedRequest
 where
 	AppState: FromRef<S>,
@@ -97,7 +95,6 @@ where
 	}
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ThumbnailRequest
 where
 	AppState: FromRef<S>,

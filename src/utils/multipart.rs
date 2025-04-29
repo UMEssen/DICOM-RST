@@ -50,8 +50,7 @@ impl IntoResponse for DicomMultipartRejection {
 	}
 }
 
-#[async_trait]
-impl<'a, S> FromRequest<S> for DicomMultipart<'a>
+impl<S> FromRequest<S> for DicomMultipart<'_>
 where
 	S: Send + Sync,
 {
