@@ -22,40 +22,40 @@ s3 = []
 
 [dependencies]
 # DICOM processing
-dicom = "0.8.0"
-dicom-json = "0.8.0"
-dicom-pixeldata = { version = "0.8.0", features = ["image"] }
-sentry = { version = "0.35.0", features = ["tracing"] }
+dicom = "0.8.1"
+dicom-json = "0.8.1"
+dicom-pixeldata = { version = "0.8.1", features = ["image"] }
+sentry = { version = "0.37.0", features = ["tracing"] }
 
 # Serialization
-serde = { version = "1.0.216", features = ["derive"] }
-serde_json = "1.0.133"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 # Logging
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 # Convenient error handling
-thiserror = "2.0.6"
-anyhow = "1.0.94"
+thiserror = "2.0.12"
+anyhow = "1.0.98"
 
-tokio = { version = "1.42.0", features = ["full"] }
-config = { version = "0.14.1", features = ["toml"] }
-axum = { version = "0.7.9", features = ["multipart", "macros"] }
-axum-extra = { version = "0.9.6", features = ["query"] }
-axum-streams = { version = "0.19.0", features = ["json"] }
+tokio = { version = "1.44.2", features = ["full"] }
+config = { version = "0.15.11", features = ["toml"] }
+axum = { version = "0.8.3", features = ["multipart", "macros"] }
+axum-extra = { version = "0.10.1", features = ["query"] }
+axum-streams = { version = "0.21.0", features = ["json"] }
 futures = "0.3.31"
 mime = "0.3.17"
 tower-http = { version = "0.6.2", features = ["trace", "cors", "timeout"] }
-tower = { version = "0.5.1", features = ["limit"] }
-async-trait = "0.1.83"
+tower = { version = "0.5.2", features = ["limit"] }
+async-trait = "0.1.88"
 async-stream = "0.3.6"
-uuid = { version = "1.11.0", features = ["v4"] }
-bytes = "1.9.0"
+uuid = { version = "1.16.0", features = ["v4"] }
+bytes = "1.10.1"
 multer = "3.1.0"
-pin-project = "1.1.7"
+pin-project = "1.1.10"
 # S3 backend
-aws-config = { version = "1.5.10", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.65.0"
-aws-credential-types = "1.2.1"
+aws-config = { version = "1.6.2", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.83.0"
+aws-credential-types = "1.2.3"
 
 [lints.rust]
 unsafe_code = "forbid"
