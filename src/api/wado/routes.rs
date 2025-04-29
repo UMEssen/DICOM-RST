@@ -20,37 +20,37 @@ use tracing::{error, instrument};
 pub fn routes() -> Router<AppState> {
 	Router::new()
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.1
-		.route("/studies/:study", get(study_instances))
-		.route("/studies/:study/series/:series", get(series_instances))
-		.route("/studies/:study/series/:series/instances/:instance", get(instance))
+		.route("/studies/{study}", get(study_instances))
+		.route("/studies/{study}/series/{series}", get(series_instances))
+		.route("/studies/{study}/series/{series}/instances/{instance}", get(instance))
 
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.2
-		.route("/studies/:study/metadata", get(study_metadata))
-		.route("/studies/:study/series/:series/metadata", get(series_metadata))
-		.route("/studies/:study/series/:series/instances/:instance/metadata", get(instance_metadata))
+		.route("/studies/{study}/metadata", get(study_metadata))
+		.route("/studies/{study}/series/{series}/metadata", get(series_metadata))
+		.route("/studies/{study}/series/{series}/instances/{instance}/metadata", get(instance_metadata))
 
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.3
-		.route("/studies/:study/rendered", get(rendered_study))
-		.route("/studies/:study/series/:series/rendered", get(rendered_series))
-		.route("/studies/:study/series/:series/instances/:instance/rendered", get(rendered_instance))
-		.route("/studies/:study/series/:series/instances/:instance/frames/:frames/rendered", get(rendered_frames))
+		.route("/studies/{study}/rendered", get(rendered_study))
+		.route("/studies/{study}/series/{series}/rendered", get(rendered_series))
+		.route("/studies/{study}/series/{series}/instances/{instance}/rendered", get(rendered_instance))
+		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frames}/rendered", get(rendered_frames))
 
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.4
-		.route("/studies/:study/thumbnail", get(study_thumbnail))
-		.route("/studies/:study/series/:series/thumbnail", get(series_thumbnail))
-		.route("/studies/:study/series/:series/instances/:instance/thumbnail", get(instance_thumbnail))
-		.route("/studies/:study/series/:series/instances/:instance/frames/:frame/thumbnail", get(frame_thumbnail))
+		.route("/studies/{study}/thumbnail", get(study_thumbnail))
+		.route("/studies/{study}/series/{series}/thumbnail", get(series_thumbnail))
+		.route("/studies/{study}/series/{series}/instances/{instance}/thumbnail", get(instance_thumbnail))
+		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frame}/thumbnail", get(frame_thumbnail))
 
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.5
-		.route("/studies/:study/bulkdata", get(study_bulkdata))
-		.route("/studies/:study/series/:series/bulkdata", get(series_bulkdata))
-		.route("/studies/:study/series/:series/instances/:instance/bulkdata", get(instance_bulkdata))
+		.route("/studies/{study}/bulkdata", get(study_bulkdata))
+		.route("/studies/{study}/series/{series}/bulkdata", get(series_bulkdata))
+		.route("/studies/{study}/series/{series}/instances/{instance}/bulkdata", get(instance_bulkdata))
 
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.6
-		.route("/studies/:study/pixeldata", get(study_pixeldata))
-		.route("/studies/:study/series/:series/pixeldata", get(series_pixeldata))
-		.route("/studies/:study/series/:series/instances/:instance/pixeldata", get(instance_pixeldata))
-		.route("/studies/:study/series/:series/instances/:instance/frames/:frame/pixeldata", get(frame_pixeldata))
+		.route("/studies/{study}/pixeldata", get(study_pixeldata))
+		.route("/studies/{study}/series/{series}/pixeldata", get(series_pixeldata))
+		.route("/studies/{study}/series/{series}/instances/{instance}/pixeldata", get(instance_pixeldata))
+		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frame}/pixeldata", get(frame_pixeldata))
 }
 
 async fn instance_resource(

@@ -9,7 +9,7 @@ use crate::AppState;
 pub fn api() -> Router<AppState> {
 	Router::new()
 		.route("/aets", get(all_aets))
-		.route("/aets/:aet", get(aet_health))
+		.route("/aets/{aet}", get(aet_health))
 }
 
 async fn all_aets(state: State<AppState>) -> impl IntoResponse {

@@ -20,7 +20,7 @@ use tracing::{error, instrument, warn};
 pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/studies", post(studies))
-		.route("/studies/:study", post(study))
+		.route("/studies/{study}", post(study))
 }
 
 #[instrument(skip_all)]
