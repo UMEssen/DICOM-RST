@@ -39,7 +39,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/studies/{study}/thumbnail", get(study_thumbnail))
 		.route("/studies/{study}/series/{series}/thumbnail", get(series_thumbnail))
 		.route("/studies/{study}/series/{series}/instances/{instance}/thumbnail", get(instance_thumbnail))
-		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frame}/thumbnail", get(frame_thumbnail))
+		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frames}/thumbnail", get(frame_thumbnail))
 
 		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html#sect_10.4.1.1.5
 		.route("/studies/{study}/bulkdata", get(study_bulkdata))
@@ -50,7 +50,7 @@ pub fn routes() -> Router<AppState> {
 		.route("/studies/{study}/pixeldata", get(study_pixeldata))
 		.route("/studies/{study}/series/{series}/pixeldata", get(series_pixeldata))
 		.route("/studies/{study}/series/{series}/instances/{instance}/pixeldata", get(instance_pixeldata))
-		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frame}/pixeldata", get(frame_pixeldata))
+		.route("/studies/{study}/series/{series}/instances/{instance}/frames/{frames}", get(frame_pixeldata))
 }
 
 async fn instance_resource(
