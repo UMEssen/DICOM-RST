@@ -1,14 +1,15 @@
-use crate::api::wado::RetrieveInstanceRequest;
+use crate::api::wado::{RenderedRequest, RetrieveInstanceRequest, ThumbnailRequest};
 use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::backend::ServiceProvider;
 use crate::types::UI;
 use crate::AppState;
 use axum::body::Body;
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
-use axum::http::{Response, StatusCode};
-use axum::response::IntoResponse;
+use axum::http::{Response, StatusCode, Uri};
+use axum::response::{IntoResponse, Redirect};
 use axum::routing::get;
 use axum::Router;
+use dicom_pixeldata::image::ImageFormat;
 use futures::{StreamExt, TryStreamExt};
 use std::pin::Pin;
 use tracing::{error, instrument};
@@ -96,6 +97,45 @@ async fn instance_resource(
 	}
 }
 
+async fn rendered_resource(
+	provider: ServiceProvider,
+	request: RenderedRequest,
+) -> impl IntoResponse {
+	if let Some(wado) = provider.wado {
+		let response = wado.render(request).await;
+
+		match response {
+			Ok(response) => {
+				let image = response.image;
+
+				// Write the image to a buffer (JPEG)
+				let mut img_buf = Vec::new();
+				if let Err(err) =
+					image.write_to(&mut std::io::Cursor::new(&mut img_buf), ImageFormat::Jpeg)
+				{
+					error!("{err:?}");
+					return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
+				}
+
+				Response::builder()
+					.header(CONTENT_TYPE, "image/jpeg")
+					.body(Body::from(img_buf))
+					.unwrap()
+			}
+			Err(err) => {
+				error!("{err:?}");
+				(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
+			}
+		}
+	} else {
+		(
+			StatusCode::SERVICE_UNAVAILABLE,
+			"WADO-RS endpoint is disabled",
+		)
+			.into_response()
+	}
+}
+
 #[instrument(skip_all)]
 async fn study_instances(
 	provider: ServiceProvider,
@@ -132,32 +172,60 @@ async fn instance_metadata() -> impl IntoResponse {
 	StatusCode::NOT_IMPLEMENTED
 }
 
-async fn rendered_study() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+#[instrument(skip_all)]
+async fn rendered_study(provider: ServiceProvider, request: RenderedRequest) -> impl IntoResponse {
+	rendered_resource(provider, request).await
 }
 
-async fn rendered_series() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+#[instrument(skip_all)]
+async fn rendered_series(provider: ServiceProvider, request: RenderedRequest) -> impl IntoResponse {
+	rendered_resource(provider, request).await
 }
 
-async fn rendered_instance() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+#[instrument(skip_all)]
+async fn rendered_instance(
+	provider: ServiceProvider,
+	request: RenderedRequest,
+) -> impl IntoResponse {
+	rendered_resource(provider, request).await
 }
 
-async fn rendered_frames() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+#[instrument(skip_all)]
+async fn rendered_frames(provider: ServiceProvider, request: RenderedRequest) -> impl IntoResponse {
+	rendered_resource(provider, request).await
 }
 
-async fn study_thumbnail() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+async fn study_thumbnail(request: ThumbnailRequest, uri: Uri) -> impl IntoResponse {
+	// Redirect to the /rendered endpoint
+	Redirect::to(&format!(
+		"/aets/{aet}/studies/{study}/rendered?{query}",
+		aet = request.query.aet,
+		study = request.query.study_instance_uid,
+		query = uri.query().unwrap_or_default()
+	))
 }
 
-async fn series_thumbnail() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+async fn series_thumbnail(request: ThumbnailRequest, uri: Uri) -> impl IntoResponse {
+	// Redirect to the /rendered endpoint
+	Redirect::to(&format!(
+		"/aets/{aet}/studies/{study}/series/{series}/rendered?{query}",
+		aet = request.query.aet,
+		study = request.query.study_instance_uid,
+		series = request.query.series_instance_uid.unwrap_or_default(),
+		query = uri.query().unwrap_or_default()
+	))
 }
 
-async fn instance_thumbnail() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+async fn instance_thumbnail(request: ThumbnailRequest, uri: Uri) -> impl IntoResponse {
+	// Redirect to the /rendered endpoint
+	Redirect::to(&format!(
+		"/aets/{aet}/studies/{study}/series/{series}/instances/{instance}/rendered?{query}",
+		aet = request.query.aet,
+		study = request.query.study_instance_uid,
+		series = request.query.series_instance_uid.unwrap_or_default(),
+		instance = request.query.sop_instance_uid.unwrap_or_default(),
+		query = uri.query().unwrap_or_default()
+	))
 }
 
 async fn frame_thumbnail() -> impl IntoResponse {

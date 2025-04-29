@@ -1106,6 +1106,7 @@ dependencies = [
  "config",
  "dicom",
  "dicom-json",
+ "dicom-pixeldata",
  "futures",
  "mime",
  "multer",

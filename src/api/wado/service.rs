@@ -7,9 +7,11 @@ use axum::extract::{FromRef, FromRequestParts, Path, Query};
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use dicom::object::{FileDicomObject, InMemDicomObject};
+use dicom_pixeldata::image::DynamicImage;
 use futures::stream::BoxStream;
-use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use serde::de::{Error, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt::{Debug, Formatter};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -21,6 +23,8 @@ pub trait WadoService: Send + Sync {
 		&self,
 		request: RetrieveInstanceRequest,
 	) -> Result<InstanceResponse, RetrieveError>;
+
+	async fn render(&self, request: RenderedRequest) -> Result<RenderedResponse, RetrieveError>;
 }
 
 #[derive(Debug, Error)]
@@ -30,6 +34,8 @@ pub enum RetrieveError {
 }
 
 pub type RetrieveInstanceRequest = RetrieveRequest<InstanceQueryParameters>;
+pub type RenderedRequest = RetrieveRequest<RenderedQueryParameters>;
+pub type ThumbnailRequest = RetrieveRequest<ThumbnailQueryParameters>;
 
 pub struct RetrieveRequest<Q: QueryParameters> {
 	pub query: ResourceQuery,
@@ -64,8 +70,66 @@ where
 	}
 }
 
+#[async_trait]
+impl<S> FromRequestParts<S> for RenderedRequest
+where
+	AppState: FromRef<S>,
+	S: Send + Sync,
+{
+	type Rejection = Response;
+
+	async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+		let Path(query): Path<ResourceQuery> = Path::from_request_parts(parts, state)
+			.await
+			.map_err(PathRejection::into_response)?;
+
+		let Query(parameters): Query<RenderedQueryParameters> =
+			Query::from_request_parts(parts, state)
+				.await
+				.map_err(QueryRejection::into_response)?;
+
+		Ok(Self {
+			query,
+			parameters,
+			// TODO: currently unused
+			headers: RequestHeaderFields::default(),
+		})
+	}
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ThumbnailRequest
+where
+	AppState: FromRef<S>,
+	S: Send + Sync,
+{
+	type Rejection = Response;
+
+	async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+		let Path(query): Path<ResourceQuery> = Path::from_request_parts(parts, state)
+			.await
+			.map_err(PathRejection::into_response)?;
+
+		let Query(parameters): Query<ThumbnailQueryParameters> =
+			Query::from_request_parts(parts, state)
+				.await
+				.map_err(QueryRejection::into_response)?;
+
+		Ok(Self {
+			query,
+			parameters,
+			// TODO: currently unused
+			headers: RequestHeaderFields::default(),
+		})
+	}
+}
+
 pub struct InstanceResponse {
 	pub stream: BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>>,
+}
+
+pub struct RenderedResponse {
+	pub image: DynamicImage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +159,7 @@ pub trait QueryParameters {}
 impl QueryParameters for InstanceQueryParameters {}
 impl QueryParameters for MetadataQueryParameters {}
 impl QueryParameters for RenderedQueryParameters {}
+impl QueryParameters for ThumbnailQueryParameters {}
 
 #[derive(Debug, Default, Deserialize)]
 pub struct InstanceQueryParameters {
@@ -108,7 +173,7 @@ pub struct MetadataQueryParameters {
 	pub charset: Option<String>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
 pub struct ImageQuality(u8);
 
 impl ImageQuality {
@@ -156,9 +221,73 @@ pub enum ImageAnnotation {
 	Technique,
 }
 
+/// Controls the viewport scaling of the images or video
+///
+/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Viewport {
+	/// Width of the viewport in pixels.
+	pub viewport_width: u32,
+	/// Height of the viewport in pixels
+	pub viewport_height: u32,
+	/// Offset of the top-left corner of the viewport from the top-left corner of the image in pixels along the horizontal axis.
+	pub source_xpos: Option<u32>,
+	/// Offset of the top-left corner of the viewport from the top-left corner of the image in pixels along the vertical axis.
+	pub source_ypos: Option<u32>,
+	/// Width of the source region to use in pixels.
+	pub source_width: Option<u32>,
+	/// Height of the source region to use in pixels.
+	pub source_height: Option<u32>,
+}
+
+struct ViewportVisitor;
+
+impl<'a> Visitor<'a> for ViewportVisitor {
+	type Value = Option<Viewport>;
+
+	fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+		write!(formatter, "a value of <viewport_width,viewport_height(,source_xpos,source_ypos,source_width,source_height)>")
+	}
+
+	fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+	where
+		E: Error,
+	{
+		let values = v.split(',').collect::<Vec<&str>>();
+		match values.len() {
+			2 => Ok(Some(Viewport {
+				viewport_width: values[0].parse().map_err(E::custom)?,
+				viewport_height: values[1].parse().map_err(E::custom)?,
+				source_xpos: None,
+				source_ypos: None,
+				source_width: None,
+				source_height: None,
+			})),
+			6 => Ok(Some(Viewport {
+				viewport_width: values[0].parse().map_err(E::custom)?,
+				viewport_height: values[1].parse().map_err(E::custom)?,
+				source_xpos: Some(values[2].parse().map_err(E::custom)?),
+				source_ypos: Some(values[3].parse().map_err(E::custom)?),
+				source_width: Some(values[4].parse().map_err(E::custom)?),
+				source_height: Some(values[5].parse().map_err(E::custom)?),
+			})),
+			_ => Err(E::custom("expected 2 or 6 comma-separated values")),
+		}
+	}
+}
+
+// See [`ViewportVisitor`].
+fn deserialize_viewport<'de, D>(deserializer: D) -> Result<Option<Viewport>, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	deserializer.deserialize_any(ViewportVisitor)
+}
+
 /// Controls the windowing of the images or video as defined in Section C.8.11.3.1.5 in PS3.3.
 ///
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.4>
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Window {
 	/// Decimal number containing the window-center value.
 	pub center: f64,
@@ -168,7 +297,46 @@ pub struct Window {
 	pub function: VoiLutFunction,
 }
 
+/// Custom deserialization visitor for repeated `includefield` query parameters.
+/// It collects all `includefield` parameters in [`crate::dicomweb::qido::IncludeField::List`].
+/// If at least one `includefield` parameter has the value `all`,
+/// [`crate::dicomweb::qido::IncludeField::All`] is returned instead.
+struct WindowVisitor;
+
+impl<'a> Visitor<'a> for WindowVisitor {
+	type Value = Option<Window>;
+
+	fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+		write!(formatter, "a value of <{{attribute}}* | all>")
+	}
+
+	fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+	where
+		E: Error,
+	{
+		let values = v.split(',').collect::<Vec<&str>>();
+		if values.len() != 3 {
+			return Err(E::custom("expected 3 comma-separated values"));
+		}
+
+		Ok(Some(Window {
+			center: values[0].parse().map_err(E::custom)?,
+			width: values[1].parse().map_err(E::custom)?,
+			function: values[2].parse().map_err(E::custom)?,
+		}))
+	}
+}
+
+/// See [`WindowVisitor`].
+fn deserialize_window<'de, D>(deserializer: D) -> Result<Option<Window>, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	deserializer.deserialize_any(WindowVisitor)
+}
+
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.3>
+#[derive(Debug, Deserialize, PartialEq)]
 pub enum VoiLutFunction {
 	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.2.1>
 	Linear,
@@ -181,6 +349,25 @@ pub enum VoiLutFunction {
 impl Default for VoiLutFunction {
 	fn default() -> Self {
 		Self::Linear
+	}
+}
+
+#[derive(Debug, Error)]
+pub enum ParseVoiLutFunctionError {
+	#[error("Unknown VOI LUT function: {function}")]
+	UnknownFunction { function: String },
+}
+
+impl FromStr for VoiLutFunction {
+	type Err = ParseVoiLutFunctionError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		match s {
+			"LINEAR" => Ok(Self::Linear),
+			"LINEAR_EXACT" => Ok(Self::LinearExact),
+			"SIGMOID" => Ok(Self::Sigmoid),
+			_ => Err(ParseVoiLutFunctionError::UnknownFunction { function: s.into() }),
+		}
 	}
 }
 
@@ -218,24 +405,30 @@ impl ImageAnnotation {
 	}
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 pub struct RenderedQueryParameters {
 	pub accept: Option<String>,
 	pub annotation: Option<String>,
 	pub quality: Option<ImageQuality>,
-	pub viewport: Option<String>,
-	pub window: Option<String>,
+	#[serde(deserialize_with = "deserialize_viewport", default)]
+	pub viewport: Option<Viewport>,
+	#[serde(deserialize_with = "deserialize_window", default)]
+	pub window: Option<Window>,
 	pub iccprofile: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 pub struct ThumbnailQueryParameters {
 	pub accept: Option<String>,
-	pub viewport: Option<String>,
+	#[serde(deserialize_with = "deserialize_viewport", default)]
+	pub viewport: Option<Viewport>,
 }
 
 #[cfg(test)]
 mod tests {
+	use axum::extract::Query;
+	use axum::http::Uri;
+
 	use super::*;
 
 	#[test]
@@ -257,6 +450,36 @@ mod tests {
 		assert_eq!(
 			"0".parse::<ImageQuality>().unwrap(),
 			ImageQuality::new(0).unwrap()
+		);
+	}
+
+	#[test]
+	fn parse_rendered_query_params() {
+		let uri =
+			Uri::from_static("http://test?window=100,200,SIGMOID&viewport=100,100,0,0,100,100");
+		let Query(params) = Query::<RenderedQueryParameters>::try_from_uri(&uri).unwrap();
+
+		assert_eq!(
+			params,
+			RenderedQueryParameters {
+				accept: None,
+				annotation: None,
+				quality: None,
+				viewport: Some(Viewport {
+					viewport_width: 100,
+					viewport_height: 100,
+					source_xpos: Some(0),
+					source_ypos: Some(0),
+					source_width: Some(100),
+					source_height: Some(100),
+				}),
+				window: Some(Window {
+					center: 100.0,
+					width: 200.0,
+					function: VoiLutFunction::Sigmoid,
+				}),
+				iccprofile: None,
+			}
 		);
 	}
 }
