@@ -1,6 +1,8 @@
+use crate::api::mwl::MwlService;
 use crate::api::qido::QidoService;
 use crate::api::stow::StowService;
 use crate::api::wado::WadoService;
+use crate::backend::dimse::mwl::DimseMwlService;
 use crate::backend::dimse::qido::DimseQidoService;
 use crate::backend::dimse::stow::DimseStowService;
 use crate::backend::dimse::wado::DimseWadoService;
@@ -24,6 +26,7 @@ pub struct ServiceProvider {
 	pub qido: Option<Box<dyn QidoService>>,
 	pub wado: Option<Box<dyn WadoService>>,
 	pub stow: Option<Box<dyn StowService>>,
+	pub mwl: Option<Box<dyn MwlService>>,
 }
 
 #[async_trait]
@@ -74,6 +77,10 @@ where
 						pool.to_owned(),
 						Duration::from_millis(ae_config.stow.timeout),
 					))),
+					mwl: Some(Box::new(DimseMwlService::new(
+						pool.to_owned(),
+						Duration::from_millis(ae_config.mwl.timeout),
+					))),
 				}
 			}
 			// For some reason serde doesn't work with feature-gated enum variants.
@@ -83,11 +90,13 @@ where
 				qido: None,
 				wado: None,
 				stow: None,
+				mwl: None,
 			},
 			BackendConfig::S3(config) => Self {
 				qido: None,
 				wado: Some(Box::new(S3WadoService::new(&config))),
 				stow: None,
+				mwl: None,
 			},
 		};
 
