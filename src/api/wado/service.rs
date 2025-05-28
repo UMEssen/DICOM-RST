@@ -1,13 +1,14 @@
 use crate::backend::dimse::cmove::movescu::MoveError;
+use crate::rendering::{RenderedMediaType, RenderingOptions};
 use crate::types::{AE, UI};
 use crate::AppState;
 use async_trait::async_trait;
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{FromRef, FromRequestParts, Path, Query};
+use axum::http::header::ACCEPT;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use dicom::object::{FileDicomObject, InMemDicomObject};
-use dicom_pixeldata::image::DynamicImage;
 use futures::stream::BoxStream;
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -24,7 +25,7 @@ pub trait WadoService: Send + Sync {
 		request: RetrieveInstanceRequest,
 	) -> Result<InstanceResponse, RetrieveError>;
 
-	async fn render(&self, request: RenderedRequest) -> Result<RenderedResponse, RetrieveError>;
+	async fn render(&self, request: RenderingRequest) -> Result<RenderedResponse, RetrieveError>;
 }
 
 #[derive(Debug, Error)]
@@ -41,6 +42,93 @@ pub struct RetrieveRequest<Q: QueryParameters> {
 	pub query: ResourceQuery,
 	pub parameters: Q,
 	pub headers: RequestHeaderFields,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenderingRequest {
+	pub query: ResourceQuery,
+	pub options: RenderingOptions,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetadataRequest {
+	pub query: ResourceQuery,
+}
+
+/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#table_8.3.5-1
+#[derive(Debug, PartialEq, Deserialize)]
+pub struct RetrieveRenderedQueryParameters {
+	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.3.html#sect_8.3.3.1
+	pub accept: Option<RenderedMediaType>,
+	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.2
+	pub quality: Option<ImageQuality>,
+	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3
+	#[serde(deserialize_with = "deserialize_viewport", default)]
+	pub viewport: Option<Viewport>,
+	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.4
+	#[serde(deserialize_with = "deserialize_window", default)]
+	pub window: Option<Window>,
+	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.5
+	#[serde(rename = "iccprofile")]
+	pub icc_profile: Option<IccProfile>,
+}
+
+impl<S> FromRequestParts<S> for RenderingRequest
+where
+	AppState: FromRef<S>,
+	S: Send + Sync,
+{
+	type Rejection = Response;
+
+	async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+		let Path(query): Path<ResourceQuery> = Path::from_request_parts(parts, state)
+			.await
+			.map_err(PathRejection::into_response)?;
+
+		let Query(params): Query<RetrieveRenderedQueryParameters> =
+			Query::from_request_parts(parts, state)
+				.await
+				.map_err(QueryRejection::into_response)?;
+
+		let media_type = params
+			.accept
+			.or_else(|| {
+				parts
+					.headers
+					.get(ACCEPT)
+					.and_then(|v| v.to_str().ok())
+					.and_then(|s| RenderedMediaType::from_str(s).ok())
+			})
+			.unwrap_or_default();
+
+		let request = Self {
+			query,
+			options: RenderingOptions {
+				media_type,
+				quality: params.quality,
+				viewport: params.viewport,
+				window: params.window,
+			},
+		};
+
+		Ok(request)
+	}
+}
+
+impl<S> FromRequestParts<S> for MetadataRequest
+where
+	AppState: FromRef<S>,
+	S: Send + Sync,
+{
+	type Rejection = Response;
+
+	async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+		let Path(query): Path<ResourceQuery> = Path::from_request_parts(parts, state)
+			.await
+			.map_err(PathRejection::into_response)?;
+
+		Ok(Self { query })
+	}
 }
 
 impl<S> FromRequestParts<S> for RetrieveInstanceRequest
@@ -60,37 +148,18 @@ where
 				.await
 				.map_err(QueryRejection::into_response)?;
 
-		Ok(Self {
-			query,
-			parameters,
-			// TODO: currently unused
-			headers: RequestHeaderFields::default(),
-		})
-	}
-}
-
-impl<S> FromRequestParts<S> for RenderedRequest
-where
-	AppState: FromRef<S>,
-	S: Send + Sync,
-{
-	type Rejection = Response;
-
-	async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-		let Path(query): Path<ResourceQuery> = Path::from_request_parts(parts, state)
-			.await
-			.map_err(PathRejection::into_response)?;
-
-		let Query(parameters): Query<RenderedQueryParameters> =
-			Query::from_request_parts(parts, state)
-				.await
-				.map_err(QueryRejection::into_response)?;
+		let accept = parts
+			.headers
+			.get(ACCEPT)
+			.map(|h| String::from(h.to_str().unwrap_or_default()));
 
 		Ok(Self {
 			query,
 			parameters,
-			// TODO: currently unused
-			headers: RequestHeaderFields::default(),
+			headers: RequestHeaderFields {
+				accept,
+				..RequestHeaderFields::default()
+			},
 		})
 	}
 }
@@ -125,11 +194,9 @@ pub struct InstanceResponse {
 	pub stream: BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>>,
 }
 
-pub struct RenderedResponse {
-	pub image: DynamicImage,
-}
+pub struct RenderedResponse(pub Vec<u8>);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ResourceQuery {
 	#[serde(rename = "aet")]
 	pub aet: AE,
@@ -185,6 +252,12 @@ impl ImageQuality {
 	}
 }
 
+impl From<ImageQuality> for u8 {
+	fn from(quality: ImageQuality) -> Self {
+		quality.0
+	}
+}
+
 impl Default for ImageQuality {
 	fn default() -> Self {
 		Self(100)
@@ -221,7 +294,7 @@ pub enum ImageAnnotation {
 /// Controls the viewport scaling of the images or video
 ///
 /// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Viewport {
 	/// Width of the viewport in pixels.
 	pub viewport_width: u32,
@@ -284,7 +357,7 @@ where
 /// Controls the windowing of the images or video as defined in Section C.8.11.3.1.5 in PS3.3.
 ///
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.4>
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Window {
 	/// Decimal number containing the window-center value.
 	pub center: f64,
@@ -333,7 +406,7 @@ where
 }
 
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.3>
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub enum VoiLutFunction {
 	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.2.1>
 	Linear,
@@ -371,6 +444,7 @@ impl FromStr for VoiLutFunction {
 /// Specifies the inclusion of an ICC Profile in the rendered images.
 ///
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.5>
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 pub enum IccProfile {
 	/// Indicates that no ICC profile shall be present in the rendered image in the response.
 	No,

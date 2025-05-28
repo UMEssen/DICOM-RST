@@ -1,4 +1,6 @@
-use crate::api::wado::{RenderedRequest, RetrieveInstanceRequest, ThumbnailRequest};
+use crate::api::wado::{
+	RenderedResponse, RenderingRequest, RetrieveError, RetrieveInstanceRequest, ThumbnailRequest,
+};
 use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::backend::ServiceProvider;
 use crate::types::UI;
@@ -9,7 +11,6 @@ use axum::http::{Response, StatusCode, Uri};
 use axum::response::{IntoResponse, Redirect};
 use axum::routing::get;
 use axum::Router;
-use dicom_pixeldata::image::ImageFormat;
 use futures::{StreamExt, TryStreamExt};
 use std::pin::Pin;
 use tracing::{error, instrument};
@@ -99,40 +100,25 @@ async fn instance_resource(
 
 async fn rendered_resource(
 	provider: ServiceProvider,
-	request: RenderedRequest,
+	request: RenderingRequest,
 ) -> impl IntoResponse {
-	if let Some(wado) = provider.wado {
-		let response = wado.render(request).await;
+	let Some(wado) = provider.wado else {
+		return Response::builder()
+			.status(StatusCode::SERVICE_UNAVAILABLE)
+			.body(Body::from("WADO-RS endpoint is disabled"))
+			.unwrap();
+	};
 
-		match response {
-			Ok(response) => {
-				let image = response.image;
-
-				// Write the image to a buffer (JPEG)
-				let mut img_buf = Vec::new();
-				if let Err(err) =
-					image.write_to(&mut std::io::Cursor::new(&mut img_buf), ImageFormat::Jpeg)
-				{
-					error!("{err:?}");
-					return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
-				}
-
-				Response::builder()
-					.header(CONTENT_TYPE, "image/jpeg")
-					.body(Body::from(img_buf))
-					.unwrap()
-			}
-			Err(err) => {
-				error!("{err:?}");
-				(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
-			}
+	let content_type = request.options.media_type.to_string();
+	match wado.render(request).await {
+		Ok(RenderedResponse(content)) => Response::builder()
+			.header(CONTENT_TYPE, content_type)
+			.body(Body::from(content))
+			.unwrap(),
+		Err(err) => {
+			error!("{err:?}");
+			(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
 		}
-	} else {
-		(
-			StatusCode::SERVICE_UNAVAILABLE,
-			"WADO-RS endpoint is disabled",
-		)
-			.into_response()
 	}
 }
 
@@ -173,25 +159,31 @@ async fn instance_metadata() -> impl IntoResponse {
 }
 
 #[instrument(skip_all)]
-async fn rendered_study(provider: ServiceProvider, request: RenderedRequest) -> impl IntoResponse {
+async fn rendered_study(provider: ServiceProvider, request: RenderingRequest) -> impl IntoResponse {
 	rendered_resource(provider, request).await
 }
 
 #[instrument(skip_all)]
-async fn rendered_series(provider: ServiceProvider, request: RenderedRequest) -> impl IntoResponse {
+async fn rendered_series(
+	provider: ServiceProvider,
+	request: RenderingRequest,
+) -> impl IntoResponse {
 	rendered_resource(provider, request).await
 }
 
 #[instrument(skip_all)]
 async fn rendered_instance(
 	provider: ServiceProvider,
-	request: RenderedRequest,
+	request: RenderingRequest,
 ) -> impl IntoResponse {
 	rendered_resource(provider, request).await
 }
 
 #[instrument(skip_all)]
-async fn rendered_frames(provider: ServiceProvider, request: RenderedRequest) -> impl IntoResponse {
+async fn rendered_frames(
+	provider: ServiceProvider,
+	request: RenderingRequest,
+) -> impl IntoResponse {
 	rendered_resource(provider, request).await
 }
 

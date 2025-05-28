@@ -1,6 +1,6 @@
 use crate::api::wado::{
-	InstanceResponse, RenderedRequest, RenderedResponse, RetrieveError, RetrieveInstanceRequest,
-	WadoService,
+	InstanceResponse, RenderedRequest, RenderedResponse, RenderingRequest, RetrieveError,
+	RetrieveInstanceRequest, WadoService,
 };
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::config::{S3Config, S3EndpointStyle};
@@ -119,7 +119,7 @@ impl WadoService for S3WadoService {
 		})
 	}
 
-	async fn render(&self, _request: RenderedRequest) -> Result<RenderedResponse, RetrieveError> {
+	async fn render(&self, _request: RenderingRequest) -> Result<RenderedResponse, RetrieveError> {
 		unimplemented!()
 	}
 }

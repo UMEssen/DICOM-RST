@@ -1,6 +1,6 @@
 use crate::api::wado::{
-	InstanceResponse, RenderedRequest, RenderedResponse, RetrieveError, RetrieveInstanceRequest,
-	WadoService,
+	InstanceResponse, MetadataRequest, RenderedResponse, RenderingRequest, RequestHeaderFields,
+	RetrieveError, RetrieveInstanceRequest, WadoService,
 };
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::movescu::{MoveError, MoveServiceClassUser};
@@ -9,6 +9,7 @@ use crate::backend::dimse::cmove::{
 };
 use crate::backend::dimse::{next_message_id, WriteError};
 use crate::config::{RetrieveMode, WadoConfig};
+use crate::rendering::render_instances;
 use crate::types::{Priority, US};
 use crate::types::{QueryRetrieveLevel, AE};
 use association::pool::AssociationPool;
@@ -17,8 +18,7 @@ use async_trait::async_trait;
 use dicom::core::VR;
 use dicom::dictionary_std::tags;
 use dicom::object::{FileDicomObject, InMemDicomObject};
-use dicom_pixeldata::image::{self, DynamicImage};
-use dicom_pixeldata::{ConvertOptions, PixelDecoder, VoiLutOption, WindowLevel};
+use dicom_pixeldata::WindowLevel;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use pin_project::pin_project;
@@ -27,9 +27,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use thiserror::Error;
-
+use tokio::pin;
 use tokio::sync::mpsc;
-use tracing::{error, info, trace, warn};
+use tracing::{error, trace, warn};
 
 pub struct DimseWadoService {
 	movescu: Arc<MoveServiceClassUser>,
@@ -71,7 +71,7 @@ impl WadoService for DimseWadoService {
 		})
 	}
 
-	async fn render(&self, request: RenderedRequest) -> Result<RenderedResponse, RetrieveError> {
+	async fn render(&self, request: RenderingRequest) -> Result<RenderedResponse, RetrieveError> {
 		if self.config.receivers.len() > 1 {
 			warn!("Multiple receivers are not supported yet.");
 		}
@@ -86,136 +86,21 @@ impl WadoService for DimseWadoService {
 				}),
 			})?;
 
-		let mut stream = self
+		let stream = self
 			.retrieve_instances(
 				&request.query.aet,
 				storescp_aet,
 				Self::create_identifier(Some(&request.query.study_instance_uid), None, None),
 			)
-			.await;
+			.await
+			.filter_map(|x| async { x.ok() });
 
-		while let Some(result) = stream.next().await {
-			match result {
-				Ok(dicom_file) => {
-					// Get study_instance_uid from dicom_file
-					let study_instance_uid = dicom_file
-						.element(tags::STUDY_INSTANCE_UID)
-						.map_err(|_e| RetrieveError::Backend {
-							source: anyhow::anyhow!("Failed to get study instance uid"),
-						})?
-						.to_str()
-						.map_err(|_e| RetrieveError::Backend {
-							source: anyhow::anyhow!("Failed to get study instance uid"),
-						})?;
-					if study_instance_uid != request.query.study_instance_uid {
-						info!("Skipping file with different study instance uid");
-						continue;
-					}
+		pin!(stream);
+		let render_output = render_instances(&mut stream, &request.options)
+			.await
+			.map_err(|source| RetrieveError::Backend { source })?;
 
-					// Get series_instance_uid from dicom_file
-					if let Some(requested_series_instance_uid) = &request.query.series_instance_uid
-					{
-						let series_instance_uid = dicom_file
-							.element(tags::SERIES_INSTANCE_UID)
-							.map_err(|_e| RetrieveError::Backend {
-								source: anyhow::anyhow!("Failed to get series instance uid"),
-							})?
-							.to_str()
-							.map_err(|_e| RetrieveError::Backend {
-								source: anyhow::anyhow!("Failed to get series instance uid"),
-							})?;
-
-						if series_instance_uid != *requested_series_instance_uid {
-							info!("Skipping file with different series instance uid");
-							continue;
-						}
-					}
-
-					if let Some(requested_sop_instance_uid) = &request.query.sop_instance_uid {
-						let sop_instance_uid = dicom_file
-							.element(tags::SOP_INSTANCE_UID)
-							.map_err(|_e| RetrieveError::Backend {
-								source: anyhow::anyhow!("Failed to get SOP instance uid"),
-							})?
-							.to_str()
-							.map_err(|_e| RetrieveError::Backend {
-								source: anyhow::anyhow!("Failed to get SOP instance uid"),
-							})?;
-
-						if sop_instance_uid != *requested_sop_instance_uid {
-							info!("Skipping file with different SOP instance uid");
-							continue;
-						}
-					}
-
-					trace!(
-						"Rendering {}",
-						dicom_file.meta().media_storage_sop_instance_uid()
-					);
-
-					let pixel_data =
-						dicom_file
-							.decode_pixel_data()
-							.map_err(|_e| RetrieveError::Backend {
-								source: anyhow::anyhow!("Failed to decode pixel data"),
-							})?;
-
-					// Convert the pixel data to an image
-					let options = match &request.parameters.window {
-						Some(windowing) => ConvertOptions::new()
-							.with_voi_lut(VoiLutOption::Custom(WindowLevel {
-								center: windowing.center,
-								width: windowing.width,
-							}))
-							.force_8bit(),
-						None => ConvertOptions::default().force_8bit(),
-					};
-					let image = pixel_data
-						.to_dynamic_image_with_options(0, &options)
-						.map_err(|e| {
-							error!("Failed to convert pixel data to image: {}", e);
-							RetrieveError::Backend {
-								source: anyhow::anyhow!("Failed to decode pixel data"),
-							}
-						})?;
-					// Apply the viewport (if set)
-					let rescaled = match request.parameters.viewport {
-						Some(viewport) => {
-							// 1. Crop our image to the source rectangle
-							// 2. Scale the cropped image to the viewport size
-							// 3. Center the scaled image on a new canvas of the viewport size
-							let scaled = image
-								.crop_imm(
-									viewport.source_xpos.unwrap_or(0),
-									viewport.source_ypos.unwrap_or(0),
-									viewport.source_width.unwrap_or(image.width()),
-									viewport.source_height.unwrap_or(image.height()),
-								)
-								.thumbnail(viewport.viewport_width, viewport.viewport_height);
-							let mut canvas = DynamicImage::new(
-								viewport.viewport_width,
-								viewport.viewport_height,
-								scaled.color(),
-							);
-							let dx = (canvas.width() - scaled.width()) / 2;
-							let dy = (canvas.height() - scaled.height()) / 2;
-							image::imageops::overlay(&mut canvas, &scaled, dx as i64, dy as i64);
-							canvas
-						}
-						None => image,
-					};
-
-					return Ok(RenderedResponse { image: rescaled });
-				}
-				Err(err) => {
-					error!("{:?}", err);
-				}
-			}
-		}
-
-		Err(RetrieveError::Backend {
-			source: anyhow::anyhow!("No renderable instance found"),
-		})
+		Ok(RenderedResponse(render_output))
 	}
 }
 
