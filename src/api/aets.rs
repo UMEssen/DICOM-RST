@@ -1,10 +1,9 @@
+use crate::AppState;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
-
-use crate::AppState;
 
 pub fn api() -> Router<AppState> {
 	Router::new()
