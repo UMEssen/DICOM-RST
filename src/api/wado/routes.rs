@@ -1,18 +1,28 @@
 use crate::api::wado::{
-	RenderedResponse, RenderingRequest, RetrieveError, RetrieveInstanceRequest, ThumbnailRequest,
+	MetadataRequest, RenderedResponse, RenderingRequest, RetrieveError, RetrieveInstanceRequest,
+	ThumbnailRequest,
 };
+use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::backend::ServiceProvider;
 use crate::types::UI;
 use crate::AppState;
 use axum::body::Body;
+use axum::extract::State;
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::http::{Response, StatusCode, Uri};
 use axum::response::{IntoResponse, Redirect};
 use axum::routing::get;
 use axum::Router;
+use axum_streams::StreamBodyAs;
+use dicom::core::header::HasLength;
+use dicom::core::{DicomValue, Length, Tag, VR};
+use dicom::dictionary_std::tags;
+use dicom::object::{FileDicomObject, InMemDicomObject};
+use dicom_json::DicomJson;
 use futures::{StreamExt, TryStreamExt};
 use std::pin::Pin;
+use std::sync::Arc;
 use tracing::{error, instrument};
 
 /// HTTP Router for the Retrieve Transaction
@@ -122,6 +132,109 @@ async fn rendered_resource(
 	}
 }
 
+async fn metadata_resource(
+	provider: ServiceProvider,
+	request: MetadataRequest,
+	state: &AppState,
+) -> impl IntoResponse {
+	let Some(wado) = provider.wado else {
+		return Response::builder()
+			.status(StatusCode::SERVICE_UNAVAILABLE)
+			.body(Body::from("WADO-RS endpoint is disabled"))
+			.unwrap();
+	};
+
+	match wado.metadata(request).await {
+		Ok(response) => {
+			let matches: Result<Vec<Arc<FileDicomObject<InMemDicomObject>>>, MoveError> =
+				response.stream.try_collect().await;
+
+			match matches {
+				Ok(matches) => {
+					if matches.is_empty() {
+						return StatusCode::NO_CONTENT.into_response();
+					}
+
+					let json: Vec<DicomJson<InMemDicomObject>> = matches
+						.into_iter()
+						// FIXME: Cloning the data so we can mutate it
+						.map(|i| i.as_ref().to_owned().into_inner())
+						.map(|mut i| {
+							remove_bulkdata(&mut i, &BulkdataRemovalOptions::default());
+							i
+						})
+						.map(DicomJson::from)
+						.collect();
+
+					Response::builder()
+						.status(StatusCode::OK)
+						.header(CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+						.body(StreamBodyAs::json_array(futures::stream::iter(json)))
+						.unwrap()
+						.into_response()
+				}
+				Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+			}
+		}
+		Err(err) => {
+			error!("{err:?}");
+			(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
+		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BulkdataRemovalOptions {
+	pub max_length: u32,
+}
+
+impl Default for BulkdataRemovalOptions {
+	fn default() -> Self {
+		Self { max_length: 10240 }
+	}
+}
+
+fn remove_bulkdata(object: &mut InMemDicomObject, options: &BulkdataRemovalOptions) {
+	object.remove_element(tags::PIXEL_DATA);
+	object.remove_element(tags::FLOAT_PIXEL_DATA);
+	object.remove_element(tags::DOUBLE_FLOAT_PIXEL_DATA);
+	object.remove_element(tags::PIXEL_DATA_PROVIDER_URL);
+	object.remove_element(tags::SPECTROSCOPY_DATA);
+	object.remove_element(tags::ENCAPSULATED_DOCUMENT);
+	// TODO: Iterate over all tags in range
+	// object.remove_element(tags::OVERLAY_DATA);
+	// object.remove_element(tags::CURVE_DATA);
+	// object.remove_element(tags::AUDIO_SAMPLE_DATA);
+
+	let tags: Vec<Tag> = object.tags().collect();
+	for tag in tags {
+		let element = object.get(tag).unwrap();
+
+		match element.vr() {
+			// Remove binary data
+			VR::OB | VR::OW | VR::OD | VR::OF | VR::OL => {
+				object.remove_element(tag);
+			}
+			// Remove UL (unlimited text) and UN (unknown) if they exceed 10240 bytes.
+			// 10240 is the same as the maximum length allowed for LT (Long Text)
+			VR::UN | VR::UT if element.length() > Length::defined(options.max_length) => {
+				object.remove_element(tag);
+			}
+			// Recursively visit all sequence items
+			VR::SQ => {
+				object.update_value(tag, |value| {
+					if let DicomValue::Sequence(sequence) = value {
+						for object in sequence.items_mut() {
+							remove_bulkdata(object, options);
+						}
+					}
+				});
+			}
+			_ => (),
+		}
+	}
+}
+
 #[instrument(skip_all)]
 async fn study_instances(
 	provider: ServiceProvider,
@@ -146,16 +259,28 @@ async fn instance(
 	instance_resource(provider, request).await
 }
 
-async fn study_metadata() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+async fn study_metadata(
+	provider: ServiceProvider,
+	request: MetadataRequest,
+	State(state): State<AppState>,
+) -> impl IntoResponse {
+	metadata_resource(provider, request, &state).await
 }
 
-async fn series_metadata() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+async fn series_metadata(
+	provider: ServiceProvider,
+	request: MetadataRequest,
+	State(state): State<AppState>,
+) -> impl IntoResponse {
+	metadata_resource(provider, request, &state).await
 }
 
-async fn instance_metadata() -> impl IntoResponse {
-	StatusCode::NOT_IMPLEMENTED
+async fn instance_metadata(
+	provider: ServiceProvider,
+	request: MetadataRequest,
+	State(state): State<AppState>,
+) -> impl IntoResponse {
+	metadata_resource(provider, request, &state).await
 }
 
 #[instrument(skip_all)]

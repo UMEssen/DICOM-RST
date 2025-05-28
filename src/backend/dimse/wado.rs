@@ -1,6 +1,6 @@
 use crate::api::wado::{
-	InstanceResponse, MetadataRequest, RenderedResponse, RenderingRequest, RequestHeaderFields,
-	RetrieveError, RetrieveInstanceRequest, WadoService,
+	InstanceQueryParameters, InstanceResponse, MetadataRequest, RenderedResponse, RenderingRequest,
+	RequestHeaderFields, RetrieveError, RetrieveInstanceRequest, WadoService,
 };
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::movescu::{MoveError, MoveServiceClassUser};
@@ -101,6 +101,15 @@ impl WadoService for DimseWadoService {
 			.map_err(|source| RetrieveError::Backend { source })?;
 
 		Ok(RenderedResponse(render_output))
+	}
+
+	async fn metadata(&self, request: MetadataRequest) -> Result<InstanceResponse, RetrieveError> {
+		self.retrieve(RetrieveInstanceRequest {
+			query: request.query,
+			parameters: InstanceQueryParameters::default(),
+			headers: RequestHeaderFields::default(),
+		})
+		.await
 	}
 }
 

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Support for the `quality` query parameter to control the compression for lossy formats like JPEG.
     - Support for the `window` query parameter for windowing.
     - Support for the `viewport` query parameter for cropping and scaling.
+- New `/metadata` endpoints for returning metadata for a given DICOM instance.
 
 ## [0.2.1]
 

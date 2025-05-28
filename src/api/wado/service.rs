@@ -26,6 +26,8 @@ pub trait WadoService: Send + Sync {
 	) -> Result<InstanceResponse, RetrieveError>;
 
 	async fn render(&self, request: RenderingRequest) -> Result<RenderedResponse, RetrieveError>;
+
+	async fn metadata(&self, request: MetadataRequest) -> Result<InstanceResponse, RetrieveError>;
 }
 
 #[derive(Debug, Error)]
