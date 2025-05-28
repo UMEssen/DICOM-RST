@@ -5,9 +5,9 @@ description = "A robust DICOMweb server with swappable backend"
 edition = "2021"
 rust-version = "1.74.0"
 categories = [
-  "multimedia",
-  "network-programming",
-  "web-programming::http-server",
+    "multimedia",
+    "network-programming",
+    "web-programming::http-server",
 ]
 keywords = ["dicom", "dicomweb", "healthcare", "medical"]
 repository = "https://github.com/UMEssen/DICOM-RST"
@@ -25,7 +25,7 @@ s3 = []
 dicom = "0.8.1"
 dicom-json = "0.8.1"
 dicom-pixeldata = { version = "0.8.1", features = ["image"] }
-sentry = { version = "0.37.0", features = ["tracing"] }
+sentry = { version = "0.38.0", features = ["tracing"] }
 
 # Serialization
 serde = { version = "1.0.219", features = ["derive"] }
@@ -37,14 +37,14 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 thiserror = "2.0.12"
 anyhow = "1.0.98"
 
-tokio = { version = "1.44.2", features = ["full"] }
+tokio = { version = "1.45.0", features = ["full"] }
 config = { version = "0.15.11", features = ["toml"] }
-axum = { version = "0.8.3", features = ["multipart", "macros"] }
+axum = { version = "0.8.4", features = ["multipart", "macros"] }
 axum-extra = { version = "0.10.1", features = ["query"] }
 axum-streams = { version = "0.21.0", features = ["json"] }
 futures = "0.3.31"
 mime = "0.3.17"
-tower-http = { version = "0.6.2", features = ["trace", "cors", "timeout"] }
+tower-http = { version = "0.6.4", features = ["trace", "cors", "timeout"] }
 tower = { version = "0.5.2", features = ["limit"] }
 async-trait = "0.1.88"
 async-stream = "0.3.6"
@@ -55,7 +55,7 @@ pin-project = "1.1.10"
 image = { version = "0.25.6", features = ["png", "jpeg", "gif"] }
 # S3 backend
 aws-config = { version = "1.6.2", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.83.0"
+aws-sdk-s3 = "1.85.0"
 aws-credential-types = "1.2.3"
 
 [lints.rust]
