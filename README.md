@@ -68,7 +68,23 @@ https://www.dicomstandard.org/using/dicomweb/retrieve-wado-rs-and-wado-uri
 | Series Instances | `studies/{study}/series/{series}/rendered`                      |       ✅        |
 | Instance         | `studies/{study}/series/{series}/instances/{instance}/rendered` |       ✅        |
 
-For rendering the first instance with pixeldata is used
+For rendering, the first instance with pixeldata is used.
+
+| Media Type      | Support Status   |
+|-----------------|------------------|
+| image/jpeg      | ✅                |
+| image/png       | ✅                |
+| image/jp2       | ❌                |
+| image/gif       | ❌ (single frame) |
+| image/gif       | ❌ (multi frame)  |
+| video/mpeg      | ❌                |
+| video/mp4       | ❌                |
+| video/H265      | ❌                |
+| text/html       | ❌                |
+| text/plain      | ❌                |
+| text/xml        | ❌                |
+| text/rtf        | ❌                |
+| application/pdf | ❌                |
 
 #### Thumbnail Resources
 
