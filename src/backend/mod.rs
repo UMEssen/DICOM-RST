@@ -26,7 +26,6 @@ pub struct ServiceProvider {
 	pub stow: Option<Box<dyn StowService>>,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ServiceProvider
 where
 	AppState: FromRef<S>,

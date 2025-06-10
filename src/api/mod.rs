@@ -8,7 +8,7 @@ pub mod wado;
 
 pub fn routes() -> Router<AppState> {
 	Router::new().merge(aets::api()).nest(
-		"/aets/:aet",
+		"/aets/{aet}",
 		Router::new()
 			.merge(qido::routes())
 			.merge(wado::routes())

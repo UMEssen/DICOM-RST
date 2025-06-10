@@ -25,9 +25,9 @@ use tracing::instrument;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/studies", get(all_studies))
-        .route("/studies/:study/series", get(studys_series))
-        .route("/studies/:study/series/:series/instances", get(studys_series_instances))
-        .route("/studies/:study/instances", get(studys_instances))
+        .route("/studies/{study}/series", get(studys_series))
+        .route("/studies/{study}/series/{series}/instances", get(studys_series_instances))
+        .route("/studies/{study}/instances", get(studys_instances))
         .route("/series", get(all_series))
         .route("/instances", get(all_instances))
 }

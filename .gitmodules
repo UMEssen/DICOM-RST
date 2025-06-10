@@ -1,3 +1,0 @@
-[submodule "tests/dicom-test-files"]
-	path = tests/dicom-test-files
-	url = https://github.com/robyoung/dicom-test-files

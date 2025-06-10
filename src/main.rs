@@ -1,6 +1,7 @@
 pub(crate) mod api;
 pub(crate) mod backend;
 pub(crate) mod config;
+pub(crate) mod rendering;
 pub(crate) mod types;
 pub(crate) mod utils;
 
