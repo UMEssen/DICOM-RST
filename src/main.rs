@@ -57,9 +57,7 @@ fn init_logger(level: tracing::Level) {
 #[derive(Clone)]
 pub struct AppState {
 	pub config: AppConfig,
-	#[cfg(feature = "dimse")]
 	pub pools: AssociationPools,
-	#[cfg(feature = "dimse")]
 	pub mediator: MoveMediator,
 }
 
@@ -102,20 +100,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run(config: AppConfig) -> anyhow::Result<()> {
-	#[cfg(feature = "dimse")]
 	let mediator = MoveMediator::new(&config);
-	#[cfg(feature = "dimse")]
 	let pools = AssociationPools::new(&config);
 
 	let app_state = AppState {
 		config: config.clone(),
-		#[cfg(feature = "dimse")]
 		mediator: mediator.clone(),
-		#[cfg(feature = "dimse")]
 		pools,
 	};
 
-	#[cfg(feature = "dimse")]
 	for dimse_config in config.server.dimse {
 		let mediator = mediator.clone();
 		let subscribers: Vec<AE> = config
