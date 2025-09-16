@@ -15,10 +15,8 @@ license = "MIT"
 readme = "README.md"
 
 [features]
-default = ["dimse", "s3"]
-dimse = []
-# TODO: feature-gate S3 dependencies
-s3 = []
+default = []
+s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:aws-credential-types"]
 
 [dependencies]
 # DICOM processing
@@ -54,9 +52,9 @@ multer = "3.1.0"
 pin-project = "1.1.10"
 image = { version = "0.25.6", features = ["png", "jpeg", "gif"] }
 # S3 backend
-aws-config = { version = "1.6.2", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.85.0"
-aws-credential-types = "1.2.3"
+aws-config = { version = "1.6.2", features = ["behavior-version-latest"], optional = true }
+aws-sdk-s3 = { version = "1.85.0", optional = true }
+aws-credential-types = { version = "1.2.3", optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"

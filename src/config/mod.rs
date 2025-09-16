@@ -1,6 +1,6 @@
 use crate::types::AE;
 use crate::DEFAULT_AET;
-use aws_credential_types::Credentials as AwsCredentials;
+
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
 use std::net::IpAddr;
@@ -36,6 +36,7 @@ pub struct ApplicationEntityConfig {
 pub enum BackendConfig {
 	#[serde(rename = "DIMSE")]
 	Dimse(DimseConfig),
+	#[cfg(feature = "s3")]
 	#[serde(rename = "S3")]
 	S3(S3Config),
 }
@@ -49,6 +50,7 @@ pub struct DimseConfig {
 	pub pool: PoolConfig,
 }
 
+#[cfg(feature = "s3")]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct S3Config {
@@ -63,6 +65,7 @@ pub struct S3Config {
 	pub endpoint_style: S3EndpointStyle,
 }
 
+#[cfg(feature = "s3")]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum S3EndpointStyle {
@@ -70,12 +73,14 @@ pub enum S3EndpointStyle {
 	VHost,
 }
 
+#[cfg(feature = "s3")]
 impl Default for S3EndpointStyle {
 	fn default() -> Self {
 		Self::VHost
 	}
 }
 
+#[cfg(feature = "s3")]
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum S3CredentialsConfig {
@@ -91,13 +96,14 @@ pub enum S3CredentialsConfig {
 	},
 }
 
+#[cfg(feature = "s3")]
 impl S3CredentialsConfig {
-	pub fn resolve(&self) -> Result<AwsCredentials, std::env::VarError> {
+	pub fn resolve(&self) -> Result<aws_credential_types::Credentials, std::env::VarError> {
 		match &self {
 			Self::Plain {
 				access_key,
 				secret_key,
-			} => Ok(AwsCredentials::new(
+			} => Ok(aws_credential_types::Credentials::new(
 				access_key,
 				secret_key,
 				None,
@@ -110,7 +116,7 @@ impl S3CredentialsConfig {
 			} => {
 				let access_key = std::env::var(access_key_env)?;
 				let secret_key = std::env::var(secret_key_env)?;
-				Ok(AwsCredentials::new(
+				Ok(aws_credential_types::Credentials::new(
 					access_key,
 					secret_key,
 					None,
@@ -274,13 +280,8 @@ pub enum Backend {
 }
 
 impl Default for Backend {
-	#[cfg(feature = "dimse")]
 	fn default() -> Self {
 		Self::Dimse
-	}
-	#[cfg(not(feature = "dimse"))]
-	fn default() -> Self {
-		Self::Disabled
 	}
 }
 
