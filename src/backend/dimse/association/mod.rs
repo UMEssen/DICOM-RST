@@ -1,4 +1,4 @@
-use dicom::ul::pdu::PresentationContextResult;
+use dicom::ul::pdu::{PresentationContextNegotiated, PresentationContextResult};
 use dicom::ul::Pdu;
 use std::time::Duration;
 use thiserror::Error;
@@ -19,9 +19,7 @@ pub enum AssociationError {
 	#[error("Failed to write P-DATA chunk: {0}")]
 	ChunkWriter(std::io::Error),
 	#[error(transparent)]
-	Client(#[from] dicom::ul::association::client::Error),
-	#[error(transparent)]
-	Server(#[from] dicom::ul::association::server::Error),
+	Association(#[from] dicom::ul::association::Error),
 }
 
 pub trait Association {
@@ -31,7 +29,7 @@ pub trait Association {
 
 	fn close(&mut self);
 
-	fn presentation_contexts(&self) -> &[PresentationContextResult];
+	fn presentation_contexts(&self) -> &[PresentationContextNegotiated];
 }
 
 #[derive(Debug)]

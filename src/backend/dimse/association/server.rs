@@ -1,6 +1,7 @@
 use super::{oneshot, AskPattern, Association, AssociationError, ChannelError, Command, Sender};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
-use dicom::ul::{pdu::PresentationContextResult, Pdu};
+use dicom::ul::pdu::Pdu;
+use dicom::ul::pdu::PresentationContextNegotiated;
 use std::convert::identity;
 use std::io::ErrorKind;
 use std::{net::TcpStream, thread, time::Duration};
@@ -11,7 +12,7 @@ use uuid::Uuid;
 pub struct ServerAssociation {
 	uuid: Uuid,
 	channel: Sender<Command>,
-	presentation_contexts: Vec<PresentationContextResult>,
+	presentation_contexts: Vec<PresentationContextNegotiated>,
 	tcp_stream: TcpStream,
 }
 
@@ -84,7 +85,7 @@ impl ServerAssociation {
 						}
 						Command::Receive(response) => {
 							let receive_result =
-								association.receive().map_err(AssociationError::Server);
+								association.receive().map_err(AssociationError::Association);
 							response
 								.send(receive_result)
 								.map_err(|_value| ChannelError::Closed)
@@ -101,7 +102,7 @@ impl ServerAssociation {
 
 				if let Err(e) = association.abort() {
 					match e {
-						dicom::ul::association::server::Error::WireSend { source, .. }
+						dicom::ul::association::Error::WireSend { source, .. }
 							if source.kind() == ErrorKind::BrokenPipe =>
 						{
 							// no-op, happens on MacOS if the TCP stream is already closed
@@ -153,7 +154,7 @@ impl Association for ServerAssociation {
 		}
 	}
 
-	fn presentation_contexts(&self) -> &[PresentationContextResult] {
+	fn presentation_contexts(&self) -> &[PresentationContextNegotiated] {
 		&self.presentation_contexts
 	}
 }

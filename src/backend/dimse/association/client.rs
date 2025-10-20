@@ -1,4 +1,4 @@
-use dicom::ul::pdu::{PDataValueType, PresentationContextResult};
+use dicom::ul::pdu::{PDataValueType, PresentationContextNegotiated};
 use dicom::ul::Pdu;
 use std::convert::identity;
 use std::io::Write;
@@ -16,7 +16,7 @@ pub struct ClientAssociation {
 	channel: Sender<Command>,
 	uuid: Uuid,
 	tcp_stream: TcpStream,
-	presentation_context: Vec<PresentationContextResult>,
+	presentation_context: Vec<PresentationContextNegotiated>,
 	acceptor_max_pdu_length: u32,
 }
 
@@ -39,7 +39,7 @@ impl ClientAssociation {
 					.first()
 					.is_some_and(|pdv| pdv.value_type == PDataValueType::Command);
 				if is_command {
-					association.send(pdu).map_err(AssociationError::Client)
+					association.send(pdu).map_err(AssociationError::Association)
 				} else {
 					let data_length: usize = data.iter().map(|pdv| pdv.data.len()).sum();
 					if data_length > association.acceptor_max_pdu_length() as usize {
@@ -52,11 +52,11 @@ impl ClientAssociation {
 						}
 						Ok(())
 					} else {
-						association.send(pdu).map_err(AssociationError::Client)
+						association.send(pdu).map_err(AssociationError::Association)
 					}
 				}
 			}
-			_ => association.send(pdu).map_err(AssociationError::Client),
+			_ => association.send(pdu).map_err(AssociationError::Association),
 		}
 	}
 
@@ -120,7 +120,7 @@ impl ClientAssociation {
 						}
 						Command::Receive(reply_to) => {
 							let receive_result =
-								association.receive().map_err(AssociationError::Client);
+								association.receive().map_err(AssociationError::Association);
 							reply_to
 								.send(receive_result)
 								.map_err(|_| ChannelError::Closed)
@@ -197,7 +197,7 @@ impl Association for ClientAssociation {
 		}
 	}
 
-	fn presentation_contexts(&self) -> &[PresentationContextResult] {
+	fn presentation_contexts(&self) -> &[PresentationContextNegotiated] {
 		&self.presentation_context
 	}
 }
