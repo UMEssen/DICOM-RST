@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Support for the `window` query parameter for windowing.
     - Support for the `viewport` query parameter for cropping and scaling.
 - New `/metadata` endpoints for returning metadata for a given DICOM instance.
+- New `dicom-rst-s3` container image variant
+
+### Changed
+
+- Updated `dicom-rs` dependency to 0.9.0
+    - Baseline support for files in deflate transfer syntaxes, such as `Deflated Explicit VR Little Endian`
 
 ## [0.2.1]
 
