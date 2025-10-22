@@ -201,6 +201,10 @@ impl AppConfig {
 			))
 			.add_source(File::with_name("config.yaml").required(false))
 			.add_source(Environment::with_prefix("DICOM_RST").separator("_"))
+			.set_override_option(
+				"server.http.base-path",
+				std::env::var("DICOM_RST_SERVER_HTTP_BASE_PATH").ok(),
+			)?
 			.build()?
 			.try_deserialize()
 	}
