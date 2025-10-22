@@ -124,6 +124,7 @@ server:
     max-upload-size: 50000000
     request-timeout: 60000
     graceful-shutdown: true
+    base-path: /
 ```
 
 <deflist>
@@ -144,6 +145,9 @@ server:
         If enabled, %product% will wait for outstanding requests to complete before stopping the process.
         Shutdowns will take no longer than the request timeout configured by <code>server.http.request.timeout</code>.
         If disabled, the process is stopped immediately, which will potentially lead to incomplete responses for outstanding requests.
+    </def>
+    <def title="server.http.base-path" id="server.http.base-path">
+        Sets the base path for all HTTP endpoints.
     </def>
 </deflist>
 
