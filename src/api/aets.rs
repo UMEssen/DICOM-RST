@@ -5,7 +5,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 
-pub fn api() -> Router<AppState> {
+pub fn routes() -> Router<AppState> {
 	Router::new()
 		.route("/aets", get(all_aets))
 		.route("/aets/{aet}", get(aet_health))

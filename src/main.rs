@@ -129,7 +129,7 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		});
 	}
 
-	let app = api::routes()
+	let app = api::routes(&config.server.http.base_path)
 		.layer(CorsLayer::permissive())
 		.layer(axum::middleware::from_fn(add_common_headers))
 		.layer(
@@ -152,7 +152,12 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let addr = SocketAddr::from((host, port));
 	let listener = TcpListener::bind(addr).await?;
 
-	info!("Started DICOMweb server on http://{addr}");
+	info!(
+		server.address = addr.ip().to_string(),
+		server.port = addr.port(),
+		url.full = config.server.http.base_url()?.as_str(),
+		"Started DICOMweb server"
+	);
 	if config.server.http.graceful_shutdown {
 		axum::serve(listener, app)
 			.with_graceful_shutdown(shutdown_signal())

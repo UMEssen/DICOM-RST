@@ -232,6 +232,27 @@ pub struct HttpServerConfig {
 	pub max_upload_size: usize,
 	pub request_timeout: u64,
 	pub graceful_shutdown: bool,
+	pub base_path: String,
+}
+
+impl HttpServerConfig {
+	const WILDCARD_ADDRESSES: [&'static str; 3] =
+		["0.0.0.0", "::", "0000:0000:0000:0000:0000:0000:0000:0000"];
+
+	pub fn base_url(&self) -> Result<url::Url, url::ParseError> {
+		let origin = format!("http://{}:{}", self.interface, self.port);
+		let mut url = url::Url::parse(&origin)?;
+
+		if url
+			.host()
+			.is_some_and(|host| Self::WILDCARD_ADDRESSES.contains(&host.to_string().as_str()))
+		{
+			url.set_host(Some("127.0.0.1"))?;
+		}
+		let url = url.join(&self.base_path)?;
+
+		Ok(url)
+	}
 }
 
 impl Default for HttpServerConfig {
@@ -242,6 +263,7 @@ impl Default for HttpServerConfig {
 			graceful_shutdown: true,
 			max_upload_size: 50_000_000, // 50 MB
 			request_timeout: 60_000,     // 1 min
+			base_path: String::from("/"),
 		}
 	}
 }
