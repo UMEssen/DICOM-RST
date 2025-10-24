@@ -146,6 +146,20 @@ https://www.dicomstandard.org/using/dicomweb/workflow-ups-rs
 
 ❌ UPS-RS is not supported.
 
+### Ask to Send DICOM Objects (ASDO-RS)
+
+> [!WARNING]  
+> The ASDO-RS specification is not finalized yet. There may be breaking changes in future revisions.
+
+| Resource                              | URI Template                                                                                | Support Status |
+|---------------------------------------|---------------------------------------------------------------------------------------------|----------------|
+| All Studies Send Requests             | `/studies/send-requests/{transactionUID}?destination={aet}`                                 | ❌              |
+| Study's Series Send Requests          | `/studies/{study}/series/send-requests/{transactionUID}?destination={aet}`                  | ❌              |
+| Study's Instances Send Requests       | `/studies/{study}/instances/send-requests/{transactionUID}?destination={aet}`               | ❌              |
+| All Series Send Requests              | `/series/send-requests/{transactionUID}?destination={aet}`                                  | ❌              |
+| Study Series' Instances Send Requests | `/study/{study}/series/{series}/instances/send-requests/{transactionUID}?destination={aet}` | ❌              |
+| All Instances Send Requests           | `/instances/send-requests/{transactionUID}?destination={aet}`                               | ❌              |
+
 ## DICOM-RST Features
 
 DICOM-RST provides additional features that are not part of the DICOMweb specification.

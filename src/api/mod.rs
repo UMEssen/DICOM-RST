@@ -3,6 +3,8 @@ use axum::Router;
 
 mod aets;
 mod home;
+
+pub mod asdo;
 pub mod qido;
 pub mod stow;
 pub mod wado;
