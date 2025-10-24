@@ -44,6 +44,7 @@ futures = "0.3.31"
 mime = "0.3.17"
 tower-http = { version = "0.6.6", features = ["trace", "cors", "timeout"] }
 tower = { version = "0.5.2", features = ["limit"] }
+url = "2.5.7"
 async-trait = "0.1.89"
 async-stream = "0.3.6"
 uuid = { version = "1.18.1", features = ["v4"] }
