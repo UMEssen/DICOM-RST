@@ -37,6 +37,9 @@
 //! }
 //! ```
 
+// Allow non_local_definitions warning from abi_stable's #[sabi_trait] macro
+// This is a known issue with the macro generating impl blocks in const items
+#![allow(non_local_definitions)]
 #![allow(clippy::module_name_repetitions)]
 
 use abi_stable::{
