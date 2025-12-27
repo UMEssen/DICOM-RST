@@ -8,9 +8,17 @@ pub(crate) mod utils;
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::MoveMediator;
 use crate::backend::dimse::StoreServiceClassProvider;
+#[cfg(feature = "plugins")]
+use crate::backend::plugin::PluginRegistry;
 use crate::config::{AppConfig, HttpServerConfig};
 use crate::types::AE;
 use association::pool::AssociationPools;
+#[cfg(feature = "plugins")]
+use std::path::PathBuf;
+#[cfg(feature = "plugins")]
+use std::sync::Arc;
+#[cfg(feature = "plugins")]
+use tokio::sync::RwLock;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::response::Response;
 use std::net::SocketAddr;
@@ -59,6 +67,8 @@ pub struct AppState {
 	pub config: AppConfig,
 	pub pools: AssociationPools,
 	pub mediator: MoveMediator,
+	#[cfg(feature = "plugins")]
+	pub plugin_registry: Arc<RwLock<PluginRegistry>>,
 }
 
 fn init_sentry(config: &AppConfig) -> sentry::ClientInitGuard {
@@ -103,10 +113,40 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let mediator = MoveMediator::new(&config);
 	let pools = AssociationPools::new(&config);
 
+	// Initialize plugin registry (when plugins feature is enabled)
+	#[cfg(feature = "plugins")]
+	let plugin_registry = {
+		let mut registry = PluginRegistry::new();
+
+		// Load plugins from configuration
+		for plugin_config in &config.plugins {
+			let plugin_path = PathBuf::from(&plugin_config.path);
+			let config_json = serde_json::to_string(&plugin_config.settings)?;
+
+			match registry.load_plugin(&plugin_path, &config_json) {
+				Ok(plugin_id) => {
+					// Bind AETs to this plugin
+					for aet in &plugin_config.aets {
+						if let Err(e) = registry.bind_aet(aet, &plugin_id) {
+							error!("Failed to bind AET {aet} to plugin {plugin_id}: {e}");
+						}
+					}
+				}
+				Err(e) => {
+					error!("Failed to load plugin from {}: {e}", plugin_config.path);
+				}
+			}
+		}
+
+		Arc::new(RwLock::new(registry))
+	};
+
 	let app_state = AppState {
 		config: config.clone(),
 		mediator: mediator.clone(),
 		pools,
+		#[cfg(feature = "plugins")]
+		plugin_registry,
 	};
 
 	for dimse_config in config.server.dimse {
