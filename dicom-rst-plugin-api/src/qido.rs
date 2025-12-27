@@ -22,8 +22,7 @@ pub trait QidoPlugin: Send + Sync {
 	///
 	/// # Returns
 	/// A stream of DICOM objects matching the search criteria, or an error.
-	fn search(&self, request: FfiSearchRequest)
-		-> FfiFuture<FfiResult<FfiDicomObjectStreamBox>>;
+	fn search(&self, request: FfiSearchRequest) -> FfiFuture<FfiResult<FfiDicomObjectStreamBox>>;
 
 	/// Check if the plugin is healthy and ready to serve requests.
 	///

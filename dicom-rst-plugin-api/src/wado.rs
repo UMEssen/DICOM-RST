@@ -26,8 +26,7 @@ pub trait WadoPlugin: Send + Sync {
 	///
 	/// # Returns
 	/// A stream of DICOM files, or an error.
-	fn retrieve(&self, request: FfiRetrieveRequest)
-		-> FfiFuture<FfiResult<FfiDicomFileStreamBox>>;
+	fn retrieve(&self, request: FfiRetrieveRequest) -> FfiFuture<FfiResult<FfiDicomFileStreamBox>>;
 
 	/// Render a DICOM instance to an image.
 	///
@@ -50,8 +49,7 @@ pub trait WadoPlugin: Send + Sync {
 	///
 	/// # Returns
 	/// A stream of DICOM files (metadata will be extracted by host), or an error.
-	fn metadata(&self, request: FfiMetadataRequest)
-		-> FfiFuture<FfiResult<FfiDicomFileStreamBox>>;
+	fn metadata(&self, request: FfiMetadataRequest) -> FfiFuture<FfiResult<FfiDicomFileStreamBox>>;
 
 	/// Check if the plugin is healthy and ready to serve requests.
 	#[sabi(last_prefix_field)]

@@ -360,7 +360,9 @@ impl crate::api::stow::StowService for PluginStowAdapter {
 			.filter_map(|obj| {
 				let mut buffer = Vec::new();
 				match obj.write_all(&mut buffer) {
-					Ok(()) => Some(dicom_rst_plugin_api::FfiDicomFile { data: buffer.into() }),
+					Ok(()) => Some(dicom_rst_plugin_api::FfiDicomFile {
+						data: buffer.into(),
+					}),
 					Err(e) => {
 						error!("Failed to serialize DICOM object for plugin: {e}");
 						None

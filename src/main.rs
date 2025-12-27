@@ -13,18 +13,18 @@ use crate::backend::plugin::PluginRegistry;
 use crate::config::{AppConfig, HttpServerConfig};
 use crate::types::AE;
 use association::pool::AssociationPools;
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::response::Response;
+use std::net::SocketAddr;
 #[cfg(feature = "plugins")]
 use std::path::PathBuf;
 #[cfg(feature = "plugins")]
 use std::sync::Arc;
-#[cfg(feature = "plugins")]
-use tokio::sync::RwLock;
-use axum::extract::{DefaultBodyLimit, Request};
-use axum::response::Response;
-use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::signal;
+#[cfg(feature = "plugins")]
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace;

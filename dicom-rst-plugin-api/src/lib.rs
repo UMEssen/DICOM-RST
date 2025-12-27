@@ -178,9 +178,7 @@ macro_rules! declare_plugin {
 				$caps
 			}
 
-			extern "C" fn initialize(
-				config: $crate::PluginConfig,
-			) -> $crate::FfiResult<()> {
+			extern "C" fn initialize(config: $crate::PluginConfig) -> $crate::FfiResult<()> {
 				let init_fn: fn($crate::PluginConfig) -> $crate::FfiResult<()> = $init;
 				init_fn(config)
 			}

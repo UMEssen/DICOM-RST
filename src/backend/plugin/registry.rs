@@ -58,12 +58,12 @@ impl PluginRegistry {
 		})?;
 
 		// Get the root module
-		let module = header
-			.init_root_module::<PluginModuleRef>()
-			.map_err(|e| PluginLoadError::InitFailed {
+		let module = header.init_root_module::<PluginModuleRef>().map_err(|e| {
+			PluginLoadError::InitFailed {
 				path: path.display().to_string(),
 				source: e,
-			})?;
+			}
+		})?;
 
 		// Get plugin info
 		let id = (module.plugin_id())().to_string();
@@ -84,25 +84,19 @@ impl PluginRegistry {
 
 		// Create service instances (wrapped in Arc for sharing)
 		let qido = if capabilities.supports_qido {
-			(module.create_qido_service())()
-				.into_option()
-				.map(Arc::new)
+			(module.create_qido_service())().into_option().map(Arc::new)
 		} else {
 			None
 		};
 
 		let wado = if capabilities.supports_wado {
-			(module.create_wado_service())()
-				.into_option()
-				.map(Arc::new)
+			(module.create_wado_service())().into_option().map(Arc::new)
 		} else {
 			None
 		};
 
 		let stow = if capabilities.supports_stow {
-			(module.create_stow_service())()
-				.into_option()
-				.map(Arc::new)
+			(module.create_stow_service())().into_option().map(Arc::new)
 		} else {
 			None
 		};
