@@ -33,6 +33,11 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --all-features --message-format=json | clippy-sarif | tee results.sarif | sarif-fmt
 
+      - name: Deduplicate SARIF relatedLocations
+        run: |
+          jq '(.runs[].results[] | select(.relatedLocations) | .relatedLocations) |= unique' results.sarif > results-dedup.sarif
+          mv results-dedup.sarif results.sarif
+
       - name: Upload SARIF file
         uses: github/codeql-action/upload-sarif@v4
         with:
