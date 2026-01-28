@@ -3,6 +3,7 @@ use axum::Router;
 
 mod aets;
 mod home;
+pub mod mwl;
 pub mod qido;
 pub mod stow;
 pub mod wado;
@@ -16,7 +17,8 @@ pub fn routes(base_path: &str) -> Router<AppState> {
 			Router::new()
 				.merge(qido::routes())
 				.merge(wado::routes())
-				.merge(stow::routes()),
+				.merge(stow::routes())
+				.merge(mwl::routes()),
 		);
 
 	// axum no longer supports nesting at the root
