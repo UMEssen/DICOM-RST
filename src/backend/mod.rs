@@ -87,6 +87,7 @@ where
 					qido: None,
 					wado: Some(Box::new(S3WadoService::new(&config))),
 					stow: None,
+					mwl: None,
 				}
 			}
 		};
