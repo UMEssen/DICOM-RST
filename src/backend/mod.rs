@@ -12,6 +12,9 @@ use std::time::Duration;
 
 pub mod dimse;
 
+#[cfg(feature = "plugins")]
+pub mod plugin;
+
 #[cfg(feature = "s3")]
 pub mod s3;
 
@@ -41,6 +44,16 @@ where
 
 		let state = AppState::from_ref(state);
 
+		// First, check if this AET is served by a plugin
+		#[cfg(feature = "plugins")]
+		{
+			let registry = state.plugin_registry.read().await;
+			if let Some(plugin) = registry.get_for_aet(&aet) {
+				return Ok(Self::from_plugin(&plugin));
+			}
+		}
+
+		// Fall back to built-in backends
 		let ae_config = state
 			.config
 			.aets
@@ -93,5 +106,28 @@ where
 		};
 
 		Ok(provider)
+	}
+}
+
+#[cfg(feature = "plugins")]
+impl ServiceProvider {
+	/// Create a `ServiceProvider` from a loaded plugin.
+	fn from_plugin(plugin: &plugin::LoadedPlugin) -> Self {
+		use plugin::{PluginQidoAdapter, PluginStowAdapter, PluginWadoAdapter};
+
+		Self {
+			qido: plugin
+				.qido
+				.clone()
+				.map(|p| Box::new(PluginQidoAdapter::new(p)) as Box<dyn QidoService>),
+			wado: plugin
+				.wado
+				.clone()
+				.map(|p| Box::new(PluginWadoAdapter::new(p)) as Box<dyn WadoService>),
+			stow: plugin
+				.stow
+				.clone()
+				.map(|p| Box::new(PluginStowAdapter::new(p)) as Box<dyn StowService>),
+		}
 	}
 }

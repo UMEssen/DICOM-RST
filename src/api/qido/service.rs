@@ -270,7 +270,9 @@ pub struct ResourceQuery {
 #[derive(Debug, Error)]
 pub enum SearchError {
 	#[error(transparent)]
-	Backend { source: Box<dyn std::error::Error> },
+	Backend {
+		source: Box<dyn std::error::Error + Send + Sync>,
+	},
 }
 
 #[cfg(test)]

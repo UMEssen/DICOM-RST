@@ -15,6 +15,24 @@ pub struct AppConfig {
 	pub server: ServerConfig,
 	#[serde(default)]
 	pub aets: Vec<ApplicationEntityConfig>,
+	#[cfg(feature = "plugins")]
+	#[serde(default)]
+	pub plugins: Vec<PluginConfiguration>,
+}
+
+/// Configuration for an external plugin.
+#[cfg(feature = "plugins")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct PluginConfiguration {
+	/// Path to the shared library (.so, .dylib, .dll)
+	pub path: String,
+	/// AETs served by this plugin
+	#[serde(default)]
+	pub aets: Vec<String>,
+	/// Plugin-specific settings (passed as JSON to plugin)
+	#[serde(default)]
+	pub settings: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
