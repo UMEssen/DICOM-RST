@@ -32,8 +32,8 @@ impl MwlService for DimseMwlService {
 	async fn search(&self, request: MwlSearchRequest) -> MwlSearchResponse {
 		let mut identifier = InMemDicomObject::new_empty();
 
-		// There are always at least 10 attributes + the query retrieve level
-		let mut attributes = Vec::with_capacity(11);
+		// There are always at least 23 attributes + the query retrieve level
+		let mut attributes = Vec::with_capacity(24);
 
 		let default_tags = WORKITEM_SEARCH_TAGS;
 
