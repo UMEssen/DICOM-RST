@@ -311,7 +311,12 @@ impl<'a> DicomMultipartStream<'a> {
 		let mut buffer = Vec::new();
 
 		writeln!(buffer, "--boundary\r")?;
-		writeln!(buffer, "Content-Type: {}\r", "application/dicom")?;
+		writeln!(
+			buffer,
+			"Content-Type: {}; transfer-syntax=\"{}\"\r",
+			"application/dicom",
+			file.meta().transfer_syntax
+		)?;
 		writeln!(buffer, "Content-Length: {}\r", file_length)?;
 		writeln!(buffer, "\r")?;
 		buffer.append(&mut dcm);
