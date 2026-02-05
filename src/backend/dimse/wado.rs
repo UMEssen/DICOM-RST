@@ -312,7 +312,7 @@ impl<'a> DicomMultipartStream<'a> {
 			buffer,
 			"Content-Type: {}; transfer-syntax=\"{}\"\r",
 			"application/dicom",
-			file.meta().transfer_syntax
+			file.meta().transfer_syntax.trim_end_matches('\0')
 		)?;
 		writeln!(buffer, "Content-Length: {}\r", file_length)?;
 		writeln!(buffer, "\r")?;
