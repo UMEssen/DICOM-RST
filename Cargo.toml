@@ -42,7 +42,7 @@ axum-extra = { version = "0.10.3", features = ["query"] }
 axum-streams = { version = "0.23.1", features = ["json"] }
 futures = "0.3.31"
 mime = "0.3.17"
-tower-http = { version = "0.6.6", features = ["trace", "cors", "timeout"] }
+tower-http = { version = "0.6.6", features = ["trace", "cors", "timeout", "normalize-path"] }
 tower = { version = "0.5.2", features = ["limit"] }
 url = "2.5.7"
 async-trait = "0.1.89"
