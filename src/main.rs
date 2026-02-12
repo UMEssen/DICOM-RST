@@ -13,11 +13,15 @@ use crate::types::AE;
 use association::pool::AssociationPools;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::response::Response;
+use axum::routing::IntoMakeService;
+use axum::ServiceExt;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::signal;
+use tower::Layer;
 use tower_http::cors::CorsLayer;
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace;
 use tracing::{error, info, level_filters::LevelFilter, Level};
@@ -144,6 +148,9 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		)))
 		.with_state(app_state);
 
+	let app = NormalizePathLayer::trim_trailing_slash().layer(app);
+	let service = ServiceExt::<Request>::into_make_service(app);
+
 	let HttpServerConfig {
 		interface: host,
 		port,
@@ -159,11 +166,11 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		"Started DICOMweb server"
 	);
 	if config.server.http.graceful_shutdown {
-		axum::serve(listener, app)
+		axum::serve(listener, service)
 			.with_graceful_shutdown(shutdown_signal())
 			.await?;
 	} else {
-		axum::serve(listener, app).await?;
+		axum::serve(listener, service).await?;
 	}
 
 	Ok(())
