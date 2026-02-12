@@ -1,5 +1,6 @@
-use crate::api::qido::{IncludeField, QidoService, SearchError, SearchRequest, SearchResponse};
+use crate::api::qido::{QidoService, SearchError, SearchRequest, SearchResponse};
 use crate::api::qido::{INSTANCE_SEARCH_TAGS, SERIES_SEARCH_TAGS, STUDY_SEARCH_TAGS};
+use crate::api::IncludeField;
 use crate::backend::dimse::association;
 use crate::backend::dimse::cfind::findscu::{FindServiceClassUser, FindServiceClassUserOptions};
 use crate::backend::dimse::next_message_id;
