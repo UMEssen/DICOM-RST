@@ -72,9 +72,14 @@ fn to_value(entry: &DataDictionaryEntryRef, raw_value: &str) -> Result<Primitive
 		| VR::ST
 		| VR::TM
 		| VR::UC
-		| VR::UI
 		| VR::UR
 		| VR::UT => Ok(PrimitiveValue::from(raw_value)),
+		// UID list matching: comma-separated UIDs become a multi-valued element
+		// See https://dicom.nema.org/medical/dicom/current/output/html/part18.html#sect_8.3.4.1
+		VR::UI => {
+			let uids: Vec<String> = raw_value.split(',').map(|s| s.trim().to_owned()).collect();
+			Ok(PrimitiveValue::Strs(uids.into()))
+		}
 		// Numeric VRs, parsing required
 		VR::SS => {
 			let value = raw_value.parse::<i16>().map_err(|err| err.to_string())?;
@@ -306,6 +311,48 @@ mod tests {
 				limit: 200,
 				include_field: IncludeField::List(Vec::new()),
 				match_criteria: MatchCriteria(Vec::new()),
+				fuzzy_matching: false,
+			}
+		);
+	}
+
+	#[test]
+	fn parse_query_params_uid_list_match() {
+		let uri = Uri::from_static("http://test?StudyInstanceUID=1,2,3");
+		let Query(params) = Query::<MwlQueryParameters>::try_from_uri(&uri).unwrap();
+
+		assert_eq!(
+			params,
+			MwlQueryParameters {
+				offset: 0,
+				limit: 200,
+				include_field: IncludeField::List(Vec::new()),
+				match_criteria: MatchCriteria(vec![(
+					tags::STUDY_INSTANCE_UID,
+					PrimitiveValue::Strs(
+						vec![String::from("1"), String::from("2"), String::from("3")].into()
+					)
+				)]),
+				fuzzy_matching: false,
+			}
+		);
+	}
+
+	#[test]
+	fn parse_query_params_uid_single_value() {
+		let uri = Uri::from_static("http://test?StudyInstanceUID=1.2.3");
+		let Query(params) = Query::<MwlQueryParameters>::try_from_uri(&uri).unwrap();
+
+		assert_eq!(
+			params,
+			MwlQueryParameters {
+				offset: 0,
+				limit: 200,
+				include_field: IncludeField::List(Vec::new()),
+				match_criteria: MatchCriteria(vec![(
+					tags::STUDY_INSTANCE_UID,
+					PrimitiveValue::from("1.2.3")
+				)]),
 				fuzzy_matching: false,
 			}
 		);
