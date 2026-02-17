@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - QIDO-RS and MWL services now support `uid-list-matching` syntax for match query parameters. 
 
+### Changed
+
+- Trailing slashes in URLs are now trimmed for all endpoints before processing (`/studies/` and `/studies` are equivalent).
+
 ## [0.3.0]
 
 ### Added
