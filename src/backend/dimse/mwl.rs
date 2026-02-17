@@ -1,7 +1,6 @@
 use crate::api::mwl::WORKITEM_SEARCH_TAGS;
-use crate::api::mwl::{
-	IncludeField, MwlSearchError, MwlSearchRequest, MwlSearchResponse, MwlService,
-};
+use crate::api::mwl::{MwlSearchError, MwlSearchRequest, MwlSearchResponse, MwlService};
+use crate::api::IncludeField;
 use crate::backend::dimse::association;
 use crate::backend::dimse::cfind::findscu::{FindServiceClassUser, FindServiceClassUserOptions};
 use crate::backend::dimse::next_message_id;
