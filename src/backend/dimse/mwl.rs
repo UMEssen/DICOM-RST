@@ -37,11 +37,11 @@ impl MwlService for DimseMwlService {
 		let default_tags = WORKITEM_SEARCH_TAGS;
 
 		for tag in default_tags {
-			attributes.push((*tag, PrimitiveValue::Empty));
+			attributes.push((AttributeSelector::from(*tag), PrimitiveValue::Empty));
 		}
 
-		for (tag, value) in request.parameters.match_criteria.into_inner() {
-			attributes.push((tag, value));
+		for (selector, value) in request.parameters.match_criteria.into_inner() {
+			attributes.push((selector, value));
 		}
 
 		match request.parameters.include_field {
@@ -52,15 +52,14 @@ impl MwlService for DimseMwlService {
 			}
 			IncludeField::List(tags) => {
 				for tag in tags {
-					attributes.push((tag, PrimitiveValue::Empty));
+					attributes.push((AttributeSelector::from(tag), PrimitiveValue::Empty));
 				}
 			}
 		};
-		for (tag, value) in attributes {
-			if let Err(err) = identifier.apply(AttributeOp::new(
-				AttributeSelector::from(tag),
-				AttributeAction::Set(value),
-			)) {
+		for (selector, value) in attributes {
+			if let Err(err) =
+				identifier.apply(AttributeOp::new(selector, AttributeAction::Set(value)))
+			{
 				warn!("Skipped attribute operation: {err}");
 			}
 		}

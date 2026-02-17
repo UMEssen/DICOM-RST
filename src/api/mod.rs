@@ -3,7 +3,8 @@ use std::fmt::Formatter;
 
 use crate::AppState;
 use axum::Router;
-use dicom::core::dictionary::{DataDictionaryEntry, DataDictionaryEntryRef};
+use dicom::core::dictionary::DataDictionaryEntry;
+use dicom::core::ops::AttributeSelector;
 use dicom::core::{DataDictionary, PrimitiveValue, Tag, VR};
 use dicom::object::StandardDataDictionary;
 use serde::de::{Error, SeqAccess, Visitor};
@@ -39,10 +40,10 @@ pub fn routes(base_path: &str) -> Router<AppState> {
 /// Match Query Parameters for QIDO and MWL requests.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(try_from = "HashMap<String, String>")]
-pub struct MatchCriteria(Vec<(Tag, PrimitiveValue)>);
+pub struct MatchCriteria(Vec<(AttributeSelector, PrimitiveValue)>);
 
 impl MatchCriteria {
-	pub fn into_inner(self) -> Vec<(Tag, PrimitiveValue)> {
+	pub fn into_inner(self) -> Vec<(AttributeSelector, PrimitiveValue)> {
 		self.0
 	}
 }
@@ -51,15 +52,15 @@ impl TryFrom<HashMap<String, String>> for MatchCriteria {
 	type Error = String;
 
 	fn try_from(value: HashMap<String, String>) -> Result<Self, Self::Error> {
-		let criteria: Vec<(Tag, PrimitiveValue)> = value
+		let criteria: Vec<(AttributeSelector, PrimitiveValue)> = value
 			.into_iter()
 			.map(|(key, value)| {
 				StandardDataDictionary
-					.by_expr(&key)
-					.ok_or(format!("Cannot use unknown attribute {key} for matching."))
-					.and_then(|entry| {
-						to_primitive_value(entry, &value)
-							.map(|primitive| (entry.tag.inner(), primitive))
+					.parse_selector(&key)
+					.map_err(|err| format!("invalid attribute selector {key}: {err}"))
+					.and_then(|selector| {
+						to_primitive_value(selector.last_tag(), &value)
+							.map(|primitive| (selector, primitive))
 					})
 			})
 			.collect::<Result<_, Self::Error>>()?;
@@ -68,14 +69,15 @@ impl TryFrom<HashMap<String, String>> for MatchCriteria {
 }
 
 /// helper function to convert a query parameter value to a PrimitiveValue
-fn to_primitive_value(
-	entry: &DataDictionaryEntryRef,
-	raw_value: &str,
-) -> Result<PrimitiveValue, String> {
+fn to_primitive_value(tag: Tag, raw_value: &str) -> Result<PrimitiveValue, String> {
 	if raw_value.is_empty() {
 		return Ok(PrimitiveValue::Empty);
 	}
-	match entry.vr.relaxed() {
+	let vr = StandardDataDictionary
+		.by_tag(tag)
+		.ok_or_else(|| format!("unknown tag {tag}"))?
+		.vr();
+	match vr.relaxed() {
 		// String-like VRs, no parsing required
 		VR::AE
 		| VR::AS
@@ -133,9 +135,8 @@ fn to_primitive_value(
 			Ok(PrimitiveValue::from(value))
 		}
 		_ => Err(format!(
-			"Attribute {} cannot be used for matching due to unsupported VR {}",
-			entry.tag(),
-			entry.vr.relaxed()
+			"Attribute {} cannot be used for matching due to unsupported VR {:?}",
+			tag, vr
 		)),
 	}
 }

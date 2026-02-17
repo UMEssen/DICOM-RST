@@ -81,6 +81,7 @@ pub enum MwlSearchError {
 mod tests {
 	use axum::extract::Query;
 	use axum::http::Uri;
+	use dicom::core::ops::AttributeSelector;
 	use dicom::core::PrimitiveValue;
 	use dicom::dictionary_std::tags;
 
@@ -100,8 +101,31 @@ mod tests {
 				limit: 42,
 				include_field: IncludeField::List(vec![tags::PATIENT_WEIGHT]),
 				match_criteria: MatchCriteria(vec![(
-					tags::PATIENT_NAME,
+					AttributeSelector::from(tags::PATIENT_NAME),
 					PrimitiveValue::from("MUSTERMANN^MAX")
+				)]),
+				fuzzy_matching: false,
+			}
+		);
+	}
+
+	#[test]
+	fn parse_query_params_nested() {
+		let uri = Uri::from_static("http://test?00400100.00400010=CTSCANNER");
+		let Query(params) = Query::<MwlQueryParameters>::try_from_uri(&uri).unwrap();
+
+		assert_eq!(
+			params,
+			MwlQueryParameters {
+				offset: 0,
+				limit: 200,
+				include_field: IncludeField::List(vec![]),
+				match_criteria: MatchCriteria(vec![(
+					AttributeSelector::from((
+						tags::SCHEDULED_PROCEDURE_STEP_SEQUENCE,
+						tags::SCHEDULED_STATION_NAME
+					)),
+					PrimitiveValue::from("CTSCANNER")
 				)]),
 				fuzzy_matching: false,
 			}
