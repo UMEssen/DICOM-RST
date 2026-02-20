@@ -151,10 +151,6 @@ async fn metadata_resource(
 
 			match matches {
 				Ok(matches) => {
-					if matches.is_empty() {
-						return StatusCode::NO_CONTENT.into_response();
-					}
-
 					let json: Vec<DicomJson<InMemDicomObject>> = matches
 						.into_iter()
 						// FIXME: Cloning the data so we can mutate it

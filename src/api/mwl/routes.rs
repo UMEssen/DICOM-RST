@@ -32,19 +32,15 @@ async fn mwl_handler(provider: ServiceProvider, request: MwlSearchRequest) -> im
 
 		match matches {
 			Ok(matches) => {
-				if matches.is_empty() {
-					StatusCode::NO_CONTENT.into_response()
-				} else {
-					let json: Vec<DicomJson<InMemDicomObject>> =
-						matches.into_iter().map(DicomJson::from).collect();
+				let json: Vec<DicomJson<InMemDicomObject>> =
+					matches.into_iter().map(DicomJson::from).collect();
 
-					axum::response::Response::builder()
-						.status(StatusCode::OK)
-						.header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-						.body(StreamBodyAs::json_array(futures::stream::iter(json)))
-						.unwrap()
-						.into_response()
-				}
+				axum::response::Response::builder()
+					.status(StatusCode::OK)
+					.header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+					.body(StreamBodyAs::json_array(futures::stream::iter(json)))
+					.unwrap()
+					.into_response()
 			}
 			Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
 		}
