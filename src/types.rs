@@ -6,6 +6,7 @@ use std::fmt::{Display, Formatter};
 pub type UI = String;
 
 /// UL (Unsigned Long) value representation.
+#[allow(unused)]
 pub type UL = u32;
 
 /// US (Unsigned Short) value representation.
@@ -15,30 +16,22 @@ pub type US = u16;
 pub type AE = String;
 
 /// Priority (0000,0700) values for DIMSE operations.
-#[derive(Debug, Copy, Clone)]
+#[allow(unused)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum Priority {
 	Low = 0x0002,
+	#[default]
 	Medium = 0x0000,
 	High = 0x0001,
 }
 
-impl Default for Priority {
-	fn default() -> Self {
-		Self::Medium
-	}
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[allow(unused)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum QueryInformationModel {
+	#[default]
 	Study,
 	Patient,
 	Worklist,
-}
-
-impl Default for QueryInformationModel {
-	fn default() -> Self {
-		Self::Study
-	}
 }
 
 impl QueryInformationModel {

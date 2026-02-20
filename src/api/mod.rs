@@ -68,7 +68,7 @@ impl TryFrom<HashMap<String, String>> for MatchCriteria {
 	}
 }
 
-/// helper function to convert a query parameter value to a PrimitiveValue
+/// helper function to convert a query parameter value to a `PrimitiveValue`
 fn to_primitive_value(tag: Tag, raw_value: &str) -> Result<PrimitiveValue, String> {
 	if raw_value.is_empty() {
 		return Ok(PrimitiveValue::Empty);
@@ -135,8 +135,7 @@ fn to_primitive_value(tag: Tag, raw_value: &str) -> Result<PrimitiveValue, Strin
 			Ok(PrimitiveValue::from(value))
 		}
 		_ => Err(format!(
-			"Attribute {} cannot be used for matching due to unsupported VR {:?}",
-			tag, vr
+			"Attribute {tag} cannot be used for matching due to unsupported VR {vr:?}",
 		)),
 	}
 }

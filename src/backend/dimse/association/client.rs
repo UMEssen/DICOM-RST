@@ -17,7 +17,6 @@ pub struct ClientAssociation {
 	uuid: Uuid,
 	tcp_stream: TcpStream,
 	presentation_context: Vec<PresentationContextNegotiated>,
-	acceptor_max_pdu_length: u32,
 }
 
 pub struct ClientAssociationOptions {
@@ -89,7 +88,6 @@ impl ClientAssociation {
 						);
 
 						let presentation_contexts = Vec::from(association.presentation_contexts());
-						let acceptor_max_pdu_length = association.acceptor_max_pdu_length();
 
 						let stream = association
 							.inner_stream()
@@ -97,7 +95,7 @@ impl ClientAssociation {
 							.expect("TcpStream should be cloneable");
 
 						connect_tx
-							.send(Ok((stream, presentation_contexts, acceptor_max_pdu_length)))
+							.send(Ok((stream, presentation_contexts)))
 							.map_err(|_| ())?;
 
 						association
@@ -148,7 +146,7 @@ impl ClientAssociation {
 			})
 			.map_err(AssociationError::OsThread)?;
 
-		let (tcp_stream, presentation_context, acceptor_max_pdu_length) =
+		let (tcp_stream, presentation_context) =
 			connect_result.await.expect("connect_result.await")?;
 
 		Ok(Self {
@@ -156,11 +154,10 @@ impl ClientAssociation {
 			uuid,
 			tcp_stream,
 			presentation_context,
-			acceptor_max_pdu_length,
 		})
 	}
 
-	pub fn uuid(&self) -> &Uuid {
+	pub const fn uuid(&self) -> &Uuid {
 		&self.uuid
 	}
 }

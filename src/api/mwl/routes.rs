@@ -12,7 +12,7 @@ use dicom_json::DicomJson;
 use futures::TryStreamExt;
 use tracing::instrument;
 
-use super::{MwlQueryParameters, MwlRequestHeaderFields, MwlSearchError, MwlSearchRequest};
+use super::{MwlQueryParameters, MwlSearchError, MwlSearchRequest};
 
 /// HTTP Router for the Modality Worklist.
 ///
@@ -58,9 +58,6 @@ async fn all_workitems(
 	provider: ServiceProvider,
 	Query(parameters): Query<MwlQueryParameters>,
 ) -> impl IntoResponse {
-	let request = MwlSearchRequest {
-		parameters,
-		headers: MwlRequestHeaderFields::default(),
-	};
+	let request = MwlSearchRequest { parameters };
 	mwl_handler(provider, request).await
 }

@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Response};
 use dicom::object::{FileDicomObject, InMemDicomObject};
 use futures::stream::BoxStream;
 use serde::de::{Error, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use std::fmt::{Debug, Formatter};
 use std::num::ParseIntError;
 use std::str::FromStr;
@@ -36,14 +36,12 @@ pub enum RetrieveError {
 	Backend { source: anyhow::Error },
 }
 
-pub type RetrieveInstanceRequest = RetrieveRequest<InstanceQueryParameters>;
-pub type RenderedRequest = RetrieveRequest<RenderedQueryParameters>;
-pub type ThumbnailRequest = RetrieveRequest<ThumbnailQueryParameters>;
-
-pub struct RetrieveRequest<Q: QueryParameters> {
+pub struct RetrieveInstanceRequest {
 	pub query: ResourceQuery,
-	pub parameters: Q,
-	pub headers: RequestHeaderFields,
+}
+
+pub struct ThumbnailRequest {
+	pub query: ResourceQuery,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,25 +50,25 @@ pub struct RenderingRequest {
 	pub options: RenderingOptions,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetadataRequest {
 	pub query: ResourceQuery,
 }
 
-/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#table_8.3.5-1
+/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#table_8.3.5-1>
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct RetrieveRenderedQueryParameters {
-	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.3.html#sect_8.3.3.1
+	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.3.html#sect_8.3.3.1>
 	pub accept: Option<RenderedMediaType>,
-	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.2
+	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.2>
 	pub quality: Option<ImageQuality>,
-	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3
+	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3>
 	#[serde(deserialize_with = "deserialize_viewport", default)]
 	pub viewport: Option<Viewport>,
-	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.4
+	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.4>
 	#[serde(deserialize_with = "deserialize_window", default)]
 	pub window: Option<Window>,
-	/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.5
+	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.5>
 	#[serde(rename = "iccprofile")]
 	pub icc_profile: Option<IccProfile>,
 }
@@ -145,24 +143,7 @@ where
 			.await
 			.map_err(PathRejection::into_response)?;
 
-		let Query(parameters): Query<InstanceQueryParameters> =
-			Query::from_request_parts(parts, state)
-				.await
-				.map_err(QueryRejection::into_response)?;
-
-		let accept = parts
-			.headers
-			.get(ACCEPT)
-			.map(|h| String::from(h.to_str().unwrap_or_default()));
-
-		Ok(Self {
-			query,
-			parameters,
-			headers: RequestHeaderFields {
-				accept,
-				..RequestHeaderFields::default()
-			},
-		})
+		Ok(Self { query })
 	}
 }
 
@@ -178,17 +159,7 @@ where
 			.await
 			.map_err(PathRejection::into_response)?;
 
-		let Query(parameters): Query<ThumbnailQueryParameters> =
-			Query::from_request_parts(parts, state)
-				.await
-				.map_err(QueryRejection::into_response)?;
-
-		Ok(Self {
-			query,
-			parameters,
-			// TODO: currently unused
-			headers: RequestHeaderFields::default(),
-		})
+		Ok(Self { query })
 	}
 }
 
@@ -198,7 +169,7 @@ pub struct InstanceResponse {
 
 pub struct RenderedResponse(pub Vec<u8>);
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ResourceQuery {
 	#[serde(rename = "aet")]
 	pub aet: AE,
@@ -208,35 +179,6 @@ pub struct ResourceQuery {
 	pub series_instance_uid: Option<UI>,
 	#[serde(rename = "instance")]
 	pub sop_instance_uid: Option<UI>,
-}
-
-#[derive(Debug, Default)]
-pub struct RequestHeaderFields {
-	pub accept: Option<String>,
-	pub accept_charset: Option<String>,
-}
-
-#[derive(Debug, Default)]
-pub struct ResponseHeaderFields {
-	pub content_type: Option<String>,
-}
-
-pub trait QueryParameters {}
-impl QueryParameters for InstanceQueryParameters {}
-impl QueryParameters for MetadataQueryParameters {}
-impl QueryParameters for RenderedQueryParameters {}
-impl QueryParameters for ThumbnailQueryParameters {}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct InstanceQueryParameters {
-	/// Should not be used when the Accept header can be used instead.
-	pub accept: Option<String>,
-}
-
-#[derive(Debug, Default)]
-pub struct MetadataQueryParameters {
-	pub accept: Option<String>,
-	pub charset: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Deserialize)]
@@ -249,7 +191,7 @@ impl ImageQuality {
 			_ => Err(ParseImageQualityError::OutOfRange { value }),
 		}
 	}
-	pub const fn as_u8(&self) -> u8 {
+	pub const fn as_u8(self) -> u8 {
 		self.0
 	}
 }
@@ -286,17 +228,11 @@ impl FromStr for ImageQuality {
 	}
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ImageAnnotation {
-	Patient,
-	Technique,
-}
-
 /// Controls the viewport scaling of the images or video
 ///
-/// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.3>
+#[allow(clippy::struct_field_names)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Viewport {
 	/// Width of the viewport in pixels.
 	pub viewport_width: u32,
@@ -314,7 +250,7 @@ pub struct Viewport {
 
 struct ViewportVisitor;
 
-impl<'a> Visitor<'a> for ViewportVisitor {
+impl Visitor<'_> for ViewportVisitor {
 	type Value = Option<Viewport>;
 
 	fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
@@ -375,7 +311,7 @@ pub struct Window {
 /// [`crate::dicomweb::qido::IncludeField::All`] is returned instead.
 struct WindowVisitor;
 
-impl<'a> Visitor<'a> for WindowVisitor {
+impl Visitor<'_> for WindowVisitor {
 	type Value = Option<Window>;
 
 	fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
@@ -408,20 +344,15 @@ where
 }
 
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.3>
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 pub enum VoiLutFunction {
 	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.2.1>
+	#[default]
 	Linear,
 	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.3.2>
 	LinearExact,
 	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.11.2.html#sect_C.11.2.1.3.1>
 	Sigmoid,
-}
-
-impl Default for VoiLutFunction {
-	fn default() -> Self {
-		Self::Linear
-	}
 }
 
 #[derive(Debug, Error)]
@@ -446,7 +377,7 @@ impl FromStr for VoiLutFunction {
 /// Specifies the inclusion of an ICC Profile in the rendered images.
 ///
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.3.5.html#sect_8.3.5.1.5>
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 pub enum IccProfile {
 	/// Indicates that no ICC profile shall be present in the rendered image in the response.
 	No,
@@ -468,33 +399,6 @@ pub enum IccProfile {
 	/// shall be transformed from their original color space and encoded in the ROMM RGB color space
 	/// \[ISO 22028-2].
 	RommRgb,
-}
-impl ImageAnnotation {
-	pub const fn as_str(&self) -> &str {
-		match self {
-			Self::Patient => "patient",
-			Self::Technique => "technique",
-		}
-	}
-}
-
-#[derive(Debug, Default, Deserialize, PartialEq)]
-pub struct RenderedQueryParameters {
-	pub accept: Option<String>,
-	pub annotation: Option<String>,
-	pub quality: Option<ImageQuality>,
-	#[serde(deserialize_with = "deserialize_viewport", default)]
-	pub viewport: Option<Viewport>,
-	#[serde(deserialize_with = "deserialize_window", default)]
-	pub window: Option<Window>,
-	pub iccprofile: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize, PartialEq)]
-pub struct ThumbnailQueryParameters {
-	pub accept: Option<String>,
-	#[serde(deserialize_with = "deserialize_viewport", default)]
-	pub viewport: Option<Viewport>,
 }
 
 #[cfg(test)]
@@ -530,13 +434,12 @@ mod tests {
 	fn parse_rendered_query_params() {
 		let uri =
 			Uri::from_static("http://test?window=100,200,SIGMOID&viewport=100,100,0,0,100,100");
-		let Query(params) = Query::<RenderedQueryParameters>::try_from_uri(&uri).unwrap();
+		let Query(params) = Query::<RetrieveRenderedQueryParameters>::try_from_uri(&uri).unwrap();
 
 		assert_eq!(
 			params,
-			RenderedQueryParameters {
+			RetrieveRenderedQueryParameters {
 				accept: None,
-				annotation: None,
 				quality: None,
 				viewport: Some(Viewport {
 					viewport_width: 100,
@@ -551,7 +454,7 @@ mod tests {
 					width: 200.0,
 					function: VoiLutFunction::Sigmoid,
 				}),
-				iccprofile: None,
+				icc_profile: None,
 			}
 		);
 	}

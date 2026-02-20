@@ -21,8 +21,8 @@ target/
 # VSCode
 .vscode/
 
-# Fleet
-.fleet/
+# Zed editor
+.zed/
 
 # Avoid adding config files that overwrite the default config
 config.toml

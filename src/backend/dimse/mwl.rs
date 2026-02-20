@@ -55,7 +55,7 @@ impl MwlService for DimseMwlService {
 					attributes.push((AttributeSelector::from(tag), PrimitiveValue::Empty));
 				}
 			}
-		};
+		}
 		for (selector, value) in attributes {
 			if let Err(err) =
 				identifier.apply(AttributeOp::new(selector, AttributeAction::Set(value)))

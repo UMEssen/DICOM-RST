@@ -10,7 +10,6 @@ use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct ServerAssociation {
-	uuid: Uuid,
 	channel: Sender<Command>,
 	presentation_contexts: Vec<PresentationContextNegotiated>,
 	tcp_stream: TcpStream,
@@ -30,9 +29,9 @@ impl ServerAssociation {
 			.promiscuous(true);
 
 		for syntax in TransferSyntaxRegistry.iter() {
-			if options.uncompressed && syntax.is_codec_free() {
-				server_options = server_options.with_transfer_syntax(syntax.uid());
-			} else if !options.uncompressed && !syntax.is_unsupported() {
+			if (options.uncompressed && syntax.is_codec_free())
+				|| (!options.uncompressed && !syntax.is_unsupported())
+			{
 				server_options = server_options.with_transfer_syntax(syntax.uid());
 			}
 		}
@@ -55,11 +54,7 @@ impl ServerAssociation {
 							"Established new server association"
 						);
 
-						let pcs = association
-							.presentation_contexts()
-							.into_iter()
-							.cloned()
-							.collect();
+						let pcs = association.presentation_contexts().to_vec();
 
 						let stream = association
 							.inner_stream()
@@ -78,7 +73,9 @@ impl ServerAssociation {
 				while let Some(command) = rx.blocking_recv() {
 					let result = match command {
 						Command::Send(pdu, response) => {
-							let send_result = association.send(&pdu).map_err(|e| e.into());
+							let send_result = association
+								.send(&pdu)
+								.map_err(AssociationError::Association);
 							response
 								.send(send_result)
 								.map_err(|_value| ChannelError::Closed)
@@ -122,7 +119,6 @@ impl ServerAssociation {
 
 		Ok(Self {
 			channel: tx,
-			uuid,
 			presentation_contexts,
 			tcp_stream,
 		})

@@ -164,15 +164,11 @@ impl Default for WadoConfig {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum RetrieveMode {
+	#[default]
 	Concurrent,
 	Sequential,
-}
-
-impl Default for RetrieveMode {
-	fn default() -> Self {
-		Self::Concurrent
-	}
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -203,7 +199,7 @@ impl AppConfig {
 	/// Loads the application configuration from the following sources:
 	/// 1. Defaults (defined in `defaults.toml`)
 	/// 2. `config.toml` in the same folder as the executable binary
-	/// 3. From environment variables, prefixed with DICOM_RST
+	/// 3. From environment variables, prefixed with `DICOM_RST`
 	/// # Errors
 	/// Returns a [`config::ConfigError`] if source collection fails.
 	pub fn new() -> Result<Self, config::ConfigError> {
@@ -308,20 +304,6 @@ impl DimseServerConfig {
 
 	pub fn default_aet() -> AE {
 		AE::from(DEFAULT_AET)
-	}
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Backend {
-	Disabled,
-	Dimse,
-	S3,
-}
-
-impl Default for Backend {
-	fn default() -> Self {
-		Self::Dimse
 	}
 }
 

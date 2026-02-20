@@ -1,6 +1,4 @@
-use crate::api::qido::{
-	QueryParameters, RequestHeaderFields, ResourceQuery, SearchError, SearchRequest,
-};
+use crate::api::qido::{QueryParameters, ResourceQuery, SearchError, SearchRequest};
 use crate::backend::ServiceProvider;
 use crate::types::QueryRetrieveLevel;
 use crate::AppState;
@@ -15,7 +13,6 @@ use axum_streams::StreamBodyAs;
 use dicom::object::InMemDicomObject;
 use dicom_json::DicomJson;
 use futures::TryStreamExt;
-use std::default::Default;
 use tracing::instrument;
 
 /// HTTP Router for the Search Transaction.
@@ -74,7 +71,6 @@ async fn all_studies(
 			series_instance_uid: None,
 		},
 		parameters,
-		headers: RequestHeaderFields::default(),
 	};
 	qido_handler(provider, request).await
 }
@@ -92,7 +88,6 @@ async fn studys_series(
 			series_instance_uid: None,
 		},
 		parameters,
-		headers: RequestHeaderFields::default(),
 	};
 	qido_handler(provider, request).await
 }
@@ -110,7 +105,6 @@ async fn studys_series_instances(
 			series_instance_uid: Some(series),
 		},
 		parameters,
-		headers: RequestHeaderFields::default(),
 	};
 	qido_handler(provider, request).await
 }
@@ -128,7 +122,6 @@ async fn studys_instances(
 			series_instance_uid: None,
 		},
 		parameters,
-		headers: RequestHeaderFields::default(),
 	};
 	qido_handler(provider, request).await
 }
@@ -145,7 +138,6 @@ async fn all_series(
 			series_instance_uid: None,
 		},
 		parameters,
-		headers: RequestHeaderFields::default(),
 	};
 	qido_handler(provider, request).await
 }
@@ -162,7 +154,6 @@ async fn all_instances(
 			series_instance_uid: None,
 		},
 		parameters,
-		headers: RequestHeaderFields::default(),
 	};
 	qido_handler(provider, request).await
 }

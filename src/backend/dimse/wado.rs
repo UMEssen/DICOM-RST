@@ -1,6 +1,6 @@
 use crate::api::wado::{
-	InstanceQueryParameters, InstanceResponse, MetadataRequest, RenderedResponse, RenderingRequest,
-	RequestHeaderFields, RetrieveError, RetrieveInstanceRequest, WadoService,
+	InstanceResponse, MetadataRequest, RenderedResponse, RenderingRequest, RetrieveError,
+	RetrieveInstanceRequest, WadoService,
 };
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::movescu::{MoveError, MoveServiceClassUser};
@@ -18,7 +18,6 @@ use async_trait::async_trait;
 use dicom::core::VR;
 use dicom::dictionary_std::tags;
 use dicom::object::{FileDicomObject, InMemDicomObject};
-use dicom_pixeldata::WindowLevel;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use pin_project::pin_project;
@@ -34,7 +33,6 @@ use tracing::{error, trace, warn};
 pub struct DimseWadoService {
 	movescu: Arc<MoveServiceClassUser>,
 	mediator: MoveMediator,
-	timeout: Duration,
 	config: WadoConfig,
 }
 
@@ -106,8 +104,6 @@ impl WadoService for DimseWadoService {
 	async fn metadata(&self, request: MetadataRequest) -> Result<InstanceResponse, RetrieveError> {
 		self.retrieve(RetrieveInstanceRequest {
 			query: request.query,
-			parameters: InstanceQueryParameters::default(),
-			headers: RequestHeaderFields::default(),
 		})
 		.await
 	}
@@ -130,7 +126,6 @@ impl DimseWadoService {
 		Self {
 			movescu: Arc::new(movescu),
 			mediator,
-			timeout,
 			config,
 		}
 	}
@@ -276,7 +271,7 @@ impl<'a> DicomMultipartStream<'a> {
 				})
 			})
 			.chain(futures::stream::once(async {
-				Ok("--boundary--".as_bytes().to_owned())
+				Ok(Vec::from(b"--boundary--"))
 			}))
 			.boxed();
 
@@ -294,8 +289,8 @@ impl<'a> DicomMultipartStream<'a> {
 		let mut buffer = Vec::new();
 
 		writeln!(buffer, "--boundary\r")?;
-		writeln!(buffer, "Content-Type: {}\r", "application/dicom")?;
-		writeln!(buffer, "Content-Length: {}\r", file_length)?;
+		writeln!(buffer, "Content-Type: application/dicom\r")?;
+		writeln!(buffer, "Content-Length: {file_length}\r")?;
 		writeln!(buffer, "\r")?;
 		buffer.append(&mut dcm);
 		writeln!(buffer, "\r")?;
@@ -304,7 +299,7 @@ impl<'a> DicomMultipartStream<'a> {
 	}
 }
 
-impl<'a> Stream for DicomMultipartStream<'a> {
+impl Stream for DicomMultipartStream<'_> {
 	type Item = Result<Vec<u8>, MoveError>;
 
 	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
