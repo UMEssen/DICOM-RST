@@ -108,6 +108,7 @@ pub enum SearchError {
 mod tests {
 	use axum::extract::Query;
 	use axum::http::Uri;
+	use dicom::core::ops::AttributeSelector;
 	use dicom::core::PrimitiveValue;
 	use dicom::dictionary_std::tags;
 
@@ -127,7 +128,7 @@ mod tests {
 				limit: 42,
 				include_field: IncludeField::List(vec![tags::PATIENT_WEIGHT]),
 				match_criteria: MatchCriteria(vec![(
-					tags::PATIENT_NAME,
+					AttributeSelector::from(tags::PATIENT_NAME),
 					PrimitiveValue::from("MUSTERMANN^MAX")
 				)]),
 				fuzzy_matching: false,
@@ -165,7 +166,7 @@ mod tests {
 				limit: 200,
 				include_field: IncludeField::List(Vec::new()),
 				match_criteria: MatchCriteria(vec![(
-					tags::STUDY_INSTANCE_UID,
+					AttributeSelector::from(tags::STUDY_INSTANCE_UID),
 					PrimitiveValue::Strs(
 						vec![String::from("1"), String::from("2"), String::from("3")].into()
 					)
@@ -187,7 +188,7 @@ mod tests {
 				limit: 200,
 				include_field: IncludeField::List(Vec::new()),
 				match_criteria: MatchCriteria(vec![(
-					tags::STUDY_INSTANCE_UID,
+					AttributeSelector::from(tags::STUDY_INSTANCE_UID),
 					PrimitiveValue::from("1.2.3")
 				)]),
 				fuzzy_matching: false,

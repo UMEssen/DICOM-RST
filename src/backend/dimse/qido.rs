@@ -45,11 +45,11 @@ impl QidoService for DimseQidoService {
 		};
 
 		for tag in default_tags {
-			attributes.push((*tag, PrimitiveValue::Empty));
+			attributes.push((AttributeSelector::from(*tag), PrimitiveValue::Empty));
 		}
 
-		for (tag, value) in request.parameters.match_criteria.into_inner() {
-			attributes.push((tag, value));
+		for (selector, value) in request.parameters.match_criteria.into_inner() {
+			attributes.push((selector, value));
 		}
 
 		match request.parameters.include_field {
@@ -60,29 +60,34 @@ impl QidoService for DimseQidoService {
 			}
 			IncludeField::List(tags) => {
 				for tag in tags {
-					attributes.push((tag, PrimitiveValue::Empty));
+					attributes.push((AttributeSelector::from(tag), PrimitiveValue::Empty));
 				}
 			}
 		};
 
 		attributes.push((
-			tags::QUERY_RETRIEVE_LEVEL,
+			AttributeSelector::from(tags::QUERY_RETRIEVE_LEVEL),
 			PrimitiveValue::from(request.query.query_retrieve_level),
 		));
 
 		if let Some(study) = request.query.study_instance_uid {
-			attributes.push((tags::STUDY_INSTANCE_UID, PrimitiveValue::from(study)));
+			attributes.push((
+				AttributeSelector::from(tags::STUDY_INSTANCE_UID),
+				PrimitiveValue::from(study),
+			));
 		}
 
 		if let Some(series) = request.query.series_instance_uid {
-			attributes.push((tags::SERIES_INSTANCE_UID, PrimitiveValue::from(series)));
+			attributes.push((
+				AttributeSelector::from(tags::SERIES_INSTANCE_UID),
+				PrimitiveValue::from(series),
+			));
 		}
 
-		for (tag, value) in attributes {
-			if let Err(err) = identifier.apply(AttributeOp::new(
-				AttributeSelector::from(tag),
-				AttributeAction::Set(value),
-			)) {
+		for (selector, value) in attributes {
+			if let Err(err) =
+				identifier.apply(AttributeOp::new(selector, AttributeAction::Set(value)))
+			{
 				warn!("Skipped attribute operation: {err}");
 			}
 		}
