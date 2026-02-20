@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 pub(crate) mod api;
 pub(crate) mod backend;
 pub(crate) mod config;

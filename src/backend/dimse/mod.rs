@@ -30,6 +30,7 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom::ul::pdu::{PDataValue, PDataValueType};
 use dicom::ul::Pdu;
 use std::fmt::{Debug, Formatter};
+use std::future::Future;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 use thiserror::Error;
@@ -105,23 +106,26 @@ impl TryFrom<u16> for StatusType {
 }
 
 pub trait DicomMessageReader {
-	async fn read_message(&self, timeout: Duration) -> Result<DicomMessage, ReadError>;
+	fn read_message(
+		&self,
+		timeout: Duration,
+	) -> impl Future<Output = Result<DicomMessage, ReadError>> + Send;
 }
 
 pub trait DicomMessageWriter {
-	async fn write_message(
+	fn write_message(
 		&self,
-		message: impl Into<DicomMessage>,
+		message: impl Into<DicomMessage> + Send,
 		presentation_context_id: Option<u8>,
 		timeout: Duration,
-	) -> Result<(), WriteError>;
+	) -> impl Future<Output = Result<(), WriteError>> + Send;
 }
 
-impl<A: Association> DicomMessageWriter for A {
+impl<A: Association + Sync> DicomMessageWriter for A {
 	#[instrument(skip_all)]
 	async fn write_message(
 		&self,
-		message: impl Into<DicomMessage>,
+		message: impl Into<DicomMessage> + Send,
 		presentation_context_id: Option<u8>,
 		timeout: Duration,
 	) -> Result<(), WriteError> {
@@ -215,7 +219,7 @@ pub enum NegotiationError {
 	NoPresentationContext,
 }
 
-impl<A: Association> DicomMessageReader for A {
+impl<A: Association + Sync> DicomMessageReader for A {
 	#[instrument(skip_all)]
 	async fn read_message(&self, timeout: Duration) -> Result<DicomMessage, ReadError> {
 		let mut command_fragments = Vec::new();

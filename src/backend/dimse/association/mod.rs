@@ -1,5 +1,6 @@
 use dicom::ul::pdu::PresentationContextNegotiated;
 use dicom::ul::Pdu;
+use std::future::Future;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc::Sender;
@@ -22,9 +23,16 @@ pub enum AssociationError {
 }
 
 pub trait Association {
-	async fn receive(&self, timeout: Duration) -> Result<Pdu, AssociationError>;
+	fn receive(
+		&self,
+		timeout: Duration,
+	) -> impl Future<Output = Result<Pdu, AssociationError>> + Send;
 
-	async fn send(&self, pdu: Pdu, timeout: Duration) -> Result<(), AssociationError>;
+	fn send(
+		&self,
+		pdu: Pdu,
+		timeout: Duration,
+	) -> impl Future<Output = Result<(), AssociationError>> + Send;
 
 	fn close(&mut self);
 
