@@ -1,6 +1,5 @@
 use crate::api::wado::{
-	MetadataRequest, RenderedResponse, RenderingRequest, RetrieveError, RetrieveInstanceRequest,
-	ThumbnailRequest,
+	MetadataRequest, RenderedResponse, RenderingRequest, RetrieveInstanceRequest, ThumbnailRequest,
 };
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::backend::dimse::wado::DicomMultipartStream;
@@ -8,7 +7,6 @@ use crate::backend::ServiceProvider;
 use crate::types::UI;
 use crate::AppState;
 use axum::body::Body;
-use axum::extract::State;
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::http::{Response, StatusCode, Uri};
 use axum::response::{IntoResponse, Redirect};
@@ -26,7 +24,7 @@ use std::sync::Arc;
 use tracing::{error, instrument};
 
 /// HTTP Router for the Retrieve Transaction
-/// https://dicom.nema.org/medical/dicom/current/output/html/part18.html#sect_10.4
+/// <https://dicom.nema.org/medical/dicom/current/output/html/part18.html#sect_10.4>
 #[rustfmt::skip]
 pub fn routes() -> Router<AppState> {
 	Router::new()
@@ -135,7 +133,6 @@ async fn rendered_resource(
 async fn metadata_resource(
 	provider: ServiceProvider,
 	request: MetadataRequest,
-	state: &AppState,
 ) -> impl IntoResponse {
 	let Some(wado) = provider.wado else {
 		return Response::builder()
@@ -179,7 +176,7 @@ async fn metadata_resource(
 	}
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BulkdataRemovalOptions {
 	pub max_length: u32,
 }
@@ -255,28 +252,19 @@ async fn instance(
 	instance_resource(provider, request).await
 }
 
-async fn study_metadata(
-	provider: ServiceProvider,
-	request: MetadataRequest,
-	State(state): State<AppState>,
-) -> impl IntoResponse {
-	metadata_resource(provider, request, &state).await
+async fn study_metadata(provider: ServiceProvider, request: MetadataRequest) -> impl IntoResponse {
+	metadata_resource(provider, request).await
 }
 
-async fn series_metadata(
-	provider: ServiceProvider,
-	request: MetadataRequest,
-	State(state): State<AppState>,
-) -> impl IntoResponse {
-	metadata_resource(provider, request, &state).await
+async fn series_metadata(provider: ServiceProvider, request: MetadataRequest) -> impl IntoResponse {
+	metadata_resource(provider, request).await
 }
 
 async fn instance_metadata(
 	provider: ServiceProvider,
 	request: MetadataRequest,
-	State(state): State<AppState>,
 ) -> impl IntoResponse {
-	metadata_resource(provider, request, &state).await
+	metadata_resource(provider, request).await
 }
 
 #[instrument(skip_all)]

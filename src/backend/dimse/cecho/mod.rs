@@ -10,7 +10,6 @@ use dicom::object::mem::InMemElement;
 use dicom::object::InMemDicomObject;
 
 const COMMAND_FIELD_COMPOSITE_ECHO_REQUEST: US = 0x0030;
-const COMMAND_FIELD_COMPOSITE_ECHO_RESPONSE: US = 0x8030;
 
 /// C-ECHO-RQ
 #[derive(Debug)]

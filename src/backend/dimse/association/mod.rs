@@ -1,10 +1,9 @@
-use dicom::ul::pdu::{PresentationContextNegotiated, PresentationContextResult};
+use dicom::ul::pdu::PresentationContextNegotiated;
 use dicom::ul::Pdu;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
-use tracing::error;
 
 pub mod client;
 pub mod pool;

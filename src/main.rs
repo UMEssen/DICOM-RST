@@ -13,7 +13,6 @@ use crate::types::AE;
 use association::pool::AssociationPools;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::response::Response;
-use axum::routing::IntoMakeService;
 use axum::ServiceExt;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -78,7 +77,7 @@ fn init_sentry(config: &AppConfig) -> sentry::ClientInitGuard {
 
 	if let Some(dsn) = &config.telemetry.sentry {
 		info!(dsn, "Enabled Sentry for tracing and error tracking");
-	};
+	}
 
 	guard
 }
@@ -191,8 +190,8 @@ async fn shutdown_signal() {
 	let terminate = std::future::pending();
 
 	tokio::select! {
-		_ = ctrl_c => {},
-		_ = terminate => {},
+		() = ctrl_c => {},
+		() = terminate => {},
 	}
 }
 

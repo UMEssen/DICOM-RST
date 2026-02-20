@@ -15,8 +15,8 @@ async fn all_aets(state: State<AppState>) -> impl IntoResponse {
 	let aets = &state.config.aets;
 
 	Json(serde_json::Value::Array(
-		aets.into_iter()
-			.map(|ae| serde_json::Value::String(ae.aet.to_owned()))
+		aets.iter()
+			.map(|ae| serde_json::Value::String(ae.aet.clone()))
 			.collect::<Vec<serde_json::Value>>(),
 	))
 }

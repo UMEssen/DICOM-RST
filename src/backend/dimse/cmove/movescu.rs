@@ -18,13 +18,8 @@ pub struct MoveServiceClassUser {
 }
 
 impl MoveServiceClassUser {
-	pub fn new(pool: AssociationPool, timeout: Duration) -> Self {
+	pub const fn new(pool: AssociationPool, timeout: Duration) -> Self {
 		Self { pool, timeout }
-	}
-
-	pub const fn timeout(mut self, timeout: Duration) -> Self {
-		self.timeout = timeout;
-		self
 	}
 
 	#[instrument(skip_all, name = "MOVE-SCU")]

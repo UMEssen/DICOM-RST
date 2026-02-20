@@ -68,6 +68,7 @@ nursery = "warn"
 cargo = "warn"
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
+lint_groups_priority = "allow"
 
 [profile.release]
 codegen-units = 1

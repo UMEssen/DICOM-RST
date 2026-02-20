@@ -1,4 +1,4 @@
-use crate::api::wado::{ImageQuality, RenderedRequest, Viewport, Window};
+use crate::api::wado::{ImageQuality, Viewport, Window};
 use anyhow::bail;
 use dicom::dictionary_std::tags;
 use dicom::object::{DefaultDicomObject, FileDicomObject, InMemDicomObject};
@@ -12,13 +12,6 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{error, instrument, trace, warn};
-
-#[derive(Debug, Error)]
-pub enum RenderingError {
-	#[error(transparent)]
-	PixelData(#[from] dicom_pixeldata::Error),
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderingOptions {
@@ -77,7 +70,7 @@ fn decode_single_frame_image(
 	Ok(image)
 }
 
-/// Renders the instance as an image using the options provided in the [RenderingOptions].
+/// Renders the instance as an image using the options provided in the [`RenderingOptions`].
 ///
 /// This supports the following rendered media types:
 /// - `image/jpeg`
@@ -111,39 +104,6 @@ fn render_single_frame_image(
 	Ok(render_buffer)
 }
 
-#[instrument(skip_all)]
-pub fn render(
-	dicom_file: &FileDicomObject<InMemDicomObject>,
-	request: &RenderedRequest,
-) -> Result<DynamicImage, RenderingError> {
-	trace!(
-		sop_instance_uid = dicom_file.meta().media_storage_sop_instance_uid(),
-		"Rendering DICOM file"
-	);
-
-	let pixel_data = dicom_file.decode_pixel_data()?;
-
-	// Convert the pixel data to an image
-	#[allow(clippy::option_if_let_else)]
-	let options = match &request.parameters.window {
-		Some(windowing) => ConvertOptions::new()
-			.with_voi_lut(VoiLutOption::Custom(WindowLevel {
-				center: windowing.center,
-				width: windowing.width,
-			}))
-			.force_8bit(),
-		None => ConvertOptions::default().force_8bit(),
-	};
-
-	let mut image = pixel_data.to_dynamic_image_with_options(0, &options)?;
-
-	if let Some(viewport) = &request.parameters.viewport {
-		image = apply_viewport(&image, viewport);
-	}
-
-	Ok(image)
-}
-
 /// 1. Crop our image to the source rectangle
 /// 2. Scale the cropped image to the viewport size
 /// 3. Center the scaled image on a new canvas of the viewport size
@@ -170,7 +130,7 @@ fn apply_viewport(image: &DynamicImage, viewport: &Viewport) -> DynamicImage {
 	canvas
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum RenderedMediaType {
 	#[default]
 	Jpeg,
@@ -188,6 +148,7 @@ impl<'de> Deserialize<'de> for RenderedMediaType {
 	}
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceCategory {
 	SingleFrameImage,

@@ -1,7 +1,7 @@
 //! This module contains the DIMSE backend.
 //! - QIDO-RS is implemented as a find service class user (C-FIND service).
 //! - WADO-RS is implemented as a move service class user (C-MOVE service).
-//!     It depends on a store service class provider that must run in the background.
+//!   It depends on a store service class provider that must run in the background.
 //! - STOR-RS is implemented as a store service class user (C-STORE service).
 //! - MWL-RS is implemented as a find service class user (C-FIND service).
 //!
@@ -37,7 +37,7 @@ use tracing::{instrument, trace};
 
 /// Should be set for [`tags::COMMAND_DATA_SET_TYPE`] if a DICOM message contains a data set.
 /// This is the recommended value when creating new [`InMemDicomObject`]s for compatibility reasons.
-/// For reading DICOM messages, prefer checking if (command_data_set_type != DATA_SET_MISSING) as
+/// For reading DICOM messages, prefer checking if (`command_data_set_type != DATA_SET_MISSING`) as
 /// AEs are free to choose another value for a truthy state.
 pub const DATA_SET_EXISTS: US = 0x0102;
 /// Should be set for [`tags::COMMAND_DATA_SET_TYPE`] if a DICOM message has no data set.
@@ -66,6 +66,8 @@ impl Debug for DicomMessage {
 
 impl DicomMessage {
 	/// Dumps the command set and data set (if present) of this DICOM message to stdout.
+	#[allow(unused)]
+	#[cfg(test)]
 	pub fn dump(&self) -> Result<(), std::io::Error> {
 		dicom::dump::dump_object(&self.command)?;
 		if let Some(data) = &self.data {
@@ -125,6 +127,7 @@ impl<A: Association> DicomMessageWriter for A {
 	) -> Result<(), WriteError> {
 		let message: DicomMessage = Into::into(message);
 
+		#[allow(clippy::option_if_let_else)]
 		let presentation_context = match presentation_context_id {
 			None => self.presentation_contexts().first(),
 			Some(presentation_context_id) => self
@@ -158,7 +161,7 @@ impl<A: Association> DicomMessageWriter for A {
 					))
 				})?;
 			let mut data_buf = Vec::new();
-			data.write_dataset_with_ts(&mut data_buf, &transfer_syntax)?;
+			data.write_dataset_with_ts(&mut data_buf, transfer_syntax)?;
 
 			let data_pdu = Pdu::PData {
 				data: vec![PDataValue {
