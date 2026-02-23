@@ -3,10 +3,12 @@ use crate::rendering::{RenderedMediaType, RenderingOptions};
 use crate::types::{AE, UI};
 use crate::AppState;
 use async_trait::async_trait;
+use axum::body::Body;
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{FromRef, FromRequestParts, Path, Query};
 use axum::http::header::ACCEPT;
 use axum::http::request::Parts;
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use dicom::object::{FileDicomObject, InMemDicomObject};
 use futures::stream::BoxStream;
@@ -22,20 +24,44 @@ use thiserror::Error;
 pub trait WadoService: Send + Sync {
 	async fn retrieve(
 		&self,
-		request: RetrieveInstanceRequest,
-	) -> Result<InstanceResponse, RetrieveError>;
+		_request: RetrieveInstanceRequest,
+	) -> Result<InstanceResponse, RetrieveError> {
+		return Err(RetrieveError::Unimplemented);
+	}
 
-	async fn render(&self, request: RenderingRequest) -> Result<RenderedResponse, RetrieveError>;
+	/// Some backends might prefer to store pre-rendered images and serve them directly.
+	/// In that case, this function can be implemented to bypass the integrated rendering and
+	/// serve the pre-rendered images directly.
+	async fn render(&self, _request: &RenderingRequest) -> Result<RenderedResponse, RetrieveError> {
+		return Err(RetrieveError::Unimplemented);
+	}
 
-	async fn metadata(&self, request: MetadataRequest) -> Result<InstanceResponse, RetrieveError>;
+	async fn metadata(&self, _request: MetadataRequest) -> Result<InstanceResponse, RetrieveError> {
+		return Err(RetrieveError::Unimplemented);
+	}
 }
 
 #[derive(Debug, Error)]
 pub enum RetrieveError {
 	#[error(transparent)]
 	Backend { source: anyhow::Error },
+	#[error("Unimplemented")]
+	Unimplemented,
 }
 
+impl IntoResponse for RetrieveError {
+	fn into_response(self) -> Response {
+		match self {
+			RetrieveError::Backend { source } => {
+				(StatusCode::INTERNAL_SERVER_ERROR, source.to_string()).into_response()
+			}
+			RetrieveError::Unimplemented => Response::builder()
+				.status(StatusCode::NOT_IMPLEMENTED)
+				.body(Body::from("This transaction is not implemented."))
+				.unwrap(),
+		}
+	}
+}
 pub struct RetrieveInstanceRequest {
 	pub query: ResourceQuery,
 }

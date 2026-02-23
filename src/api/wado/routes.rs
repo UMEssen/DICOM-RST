@@ -1,9 +1,11 @@
 use crate::api::wado::{
-	MetadataRequest, RenderedResponse, RenderingRequest, RetrieveInstanceRequest, ThumbnailRequest,
+	MetadataRequest, RenderedResponse, RenderingRequest, RetrieveError, RetrieveInstanceRequest,
+	ThumbnailRequest,
 };
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::backend::dimse::wado::DicomMultipartStream;
 use crate::backend::ServiceProvider;
+use crate::rendering::render_instances;
 use crate::types::UI;
 use crate::AppState;
 use axum::body::Body;
@@ -21,7 +23,8 @@ use dicom_json::DicomJson;
 use futures::{StreamExt, TryStreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
-use tracing::{error, instrument};
+use tokio::pin;
+use tracing::{error, instrument, trace};
 
 /// HTTP Router for the Retrieve Transaction
 /// <https://dicom.nema.org/medical/dicom/current/output/html/part18.html#sect_10.4>
@@ -109,23 +112,46 @@ async fn instance_resource(
 async fn rendered_resource(
 	provider: ServiceProvider,
 	request: RenderingRequest,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, RetrieveError> {
 	let Some(wado) = provider.wado else {
-		return Response::builder()
+		return Ok(Response::builder()
 			.status(StatusCode::SERVICE_UNAVAILABLE)
 			.body(Body::from("WADO-RS endpoint is disabled"))
-			.unwrap();
+			.unwrap());
 	};
 
 	let content_type = request.options.media_type.to_string();
-	match wado.render(request).await {
-		Ok(RenderedResponse(content)) => Response::builder()
+
+	match wado.render(&request).await {
+		Ok(RenderedResponse(content)) => Ok(Response::builder()
 			.header(CONTENT_TYPE, content_type)
 			.body(Body::from(content))
-			.unwrap(),
+			.unwrap()),
+		Err(RetrieveError::Unimplemented) => {
+			trace!("Using default rendering");
+			let instance_request = RetrieveInstanceRequest {
+				query: request.query,
+			};
+
+			let stream = wado
+				.retrieve(instance_request)
+				.await?
+				.stream
+				.filter_map(|x| async { x.ok() });
+			pin!(stream);
+
+			let render_output = render_instances(&mut stream, &request.options)
+				.await
+				.map_err(|err| RetrieveError::Backend { source: err })?;
+
+			Ok(Response::builder()
+				.header(CONTENT_TYPE, content_type)
+				.body(Body::from(render_output))
+				.unwrap())
+		}
 		Err(err) => {
 			error!("{err:?}");
-			(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
+			Ok((StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response())
 		}
 	}
 }
@@ -268,7 +294,10 @@ async fn instance_metadata(
 }
 
 #[instrument(skip_all)]
-async fn rendered_study(provider: ServiceProvider, request: RenderingRequest) -> impl IntoResponse {
+async fn rendered_study(
+	provider: ServiceProvider,
+	request: RenderingRequest,
+) -> Result<impl IntoResponse, RetrieveError> {
 	rendered_resource(provider, request).await
 }
 
@@ -276,7 +305,7 @@ async fn rendered_study(provider: ServiceProvider, request: RenderingRequest) ->
 async fn rendered_series(
 	provider: ServiceProvider,
 	request: RenderingRequest,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, RetrieveError> {
 	rendered_resource(provider, request).await
 }
 
@@ -284,7 +313,7 @@ async fn rendered_series(
 async fn rendered_instance(
 	provider: ServiceProvider,
 	request: RenderingRequest,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, RetrieveError> {
 	rendered_resource(provider, request).await
 }
 
@@ -292,7 +321,7 @@ async fn rendered_instance(
 async fn rendered_frames(
 	provider: ServiceProvider,
 	request: RenderingRequest,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, RetrieveError> {
 	rendered_resource(provider, request).await
 }
 

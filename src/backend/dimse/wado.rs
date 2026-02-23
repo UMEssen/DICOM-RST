@@ -69,7 +69,7 @@ impl WadoService for DimseWadoService {
 		})
 	}
 
-	async fn render(&self, request: RenderingRequest) -> Result<RenderedResponse, RetrieveError> {
+	async fn render(&self, request: &RenderingRequest) -> Result<RenderedResponse, RetrieveError> {
 		if self.config.receivers.len() > 1 {
 			warn!("Multiple receivers are not supported yet.");
 		}
