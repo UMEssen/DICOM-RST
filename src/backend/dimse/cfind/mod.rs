@@ -10,7 +10,6 @@ pub mod findscu;
 
 // Magic numbers defined by the DICOM specification.
 pub const COMMAND_FIELD_COMPOSITE_FIND_REQUEST: US = 0x0020;
-pub const COMMAND_FIELD_COMPOSITE_FIND_RESPONSE: US = 0x8020;
 
 /// C-FIND-RQ
 /// <https://dicom.nema.org/medical/dicom/current/output/chtml/part07/chapter_9.html#table_9.1-2>

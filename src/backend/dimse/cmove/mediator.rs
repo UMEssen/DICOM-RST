@@ -7,7 +7,7 @@ use std::sync::{Arc, Weak};
 use thiserror::Error;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
-use tracing::{error, info};
+use tracing::info;
 
 pub type Callback = Sender<Result<MoveSubOperation, MoveError>>;
 
@@ -126,6 +126,7 @@ pub struct SubscriptionTopic {
 
 pub struct Subscription {
 	topic: SubscriptionTopic,
+	#[allow(unused)] // we never use it, but still need to hold ownership
 	permit: Option<OwnedSemaphorePermit>,
 	mediator: Weak<InnerMoveMediator>,
 }

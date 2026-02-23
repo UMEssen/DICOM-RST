@@ -67,6 +67,7 @@ impl<M: Manager> Pool<M> {
 					.rposition(|slot| slot.parameter == parameter)
 					.and_then(|position| slots.remove(position));
 
+				#[allow(clippy::option_if_let_else)]
 				if let Some(target_slot) = target_slot {
 					Some(target_slot)
 				} else {
@@ -171,6 +172,7 @@ struct ObjectInner<M: Manager> {
 
 #[derive(Debug)]
 pub struct Metrics {
+	#[allow(unused)]
 	pub created: Instant,
 	pub recycle_count: usize,
 	pub last_used: Instant,
@@ -261,6 +263,7 @@ impl AssociationPools {
 	pub fn new(config: &AppConfig) -> Self {
 		let mut pools = HashMap::with_capacity(config.server.dimse.len());
 		for ae_config in &config.aets {
+			#[allow(irrefutable_let_patterns)] // the lint is not aware of the S3 feature
 			if let BackendConfig::Dimse(dimse_config) = &ae_config.backend {
 				let pool_size = dimse_config.pool.size;
 

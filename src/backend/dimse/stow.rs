@@ -9,13 +9,12 @@ use tracing::info;
 
 pub struct DimseStowService {
 	storescu: StoreServiceClassUser,
-	timeout: Duration,
 }
 
 impl DimseStowService {
 	pub const fn new(pool: AssociationPool, timeout: Duration) -> Self {
 		let storescu = StoreServiceClassUser::new(pool, timeout);
-		Self { storescu, timeout }
+		Self { storescu }
 	}
 }
 
@@ -32,7 +31,7 @@ impl StowService for DimseStowService {
 			let response = self.storescu.store(instance).await;
 
 			match response {
-				Ok(_) => {
+				Ok(()) => {
 					info!(sop_instance_uid, "Successfully stored instance");
 					referenced_sequence.push(InstanceReference {
 						sop_class_uid,

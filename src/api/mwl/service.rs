@@ -16,7 +16,6 @@ pub trait MwlService: Send + Sync {
 
 pub struct MwlSearchRequest {
 	pub parameters: MwlQueryParameters,
-	pub headers: MwlRequestHeaderFields,
 }
 
 /// Query parameters for a MWL-RS request.
@@ -46,25 +45,6 @@ impl Default for MwlQueryParameters {
 			offset: 0,
 		}
 	}
-}
-
-#[derive(Debug, Default)]
-pub struct MwlRequestHeaderFields {
-	pub accept: Option<String>,
-	pub accept_charset: Option<String>,
-}
-
-/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.6.3.2.html#table_10.6.3-2>
-#[derive(Debug, Default)]
-pub struct ResponseHeaderFields {
-	/// The DICOM Media Type of the response payload.
-	/// Shall be present if the response has a payload.
-	pub content_type: Option<String>,
-	/// Shall be present if no transfer coding has been applied to the payload.
-	pub content_length: Option<usize>,
-	/// Shall be present if a transfer encoding has been applied to the payload.
-	pub transfer_encoding: Option<String>,
-	pub warning: Vec<String>,
 }
 
 pub struct MwlSearchResponse<'a> {

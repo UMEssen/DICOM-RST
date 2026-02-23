@@ -10,7 +10,6 @@ use thiserror::Error;
 
 pub struct StoreRequest {
 	pub instances: Vec<FileDicomObject<InMemDicomObject>>,
-	pub study_instance_uid: Option<UI>,
 }
 
 /// <https://dicom.nema.org/medical/dicom/current/output/html/part03.html#table_10-11>
@@ -89,10 +88,6 @@ pub trait StowService: Sync + Send {
 
 #[derive(Debug, Error)]
 pub enum StoreError {
-	#[error("Instance does not match the provided Study Instance UID")]
-	StudyInstanceUidMismatch { study_instance_uid: String },
-	#[error("The media type {media_type} is not supported")]
-	UnsupportedMediaType { media_type: String },
 	#[error("The file exceeds the configured upload size limit")]
 	UploadLimitExceeded,
 	#[error(transparent)]

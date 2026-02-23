@@ -63,7 +63,7 @@ impl QidoService for DimseQidoService {
 					attributes.push((AttributeSelector::from(tag), PrimitiveValue::Empty));
 				}
 			}
-		};
+		}
 
 		attributes.push((
 			AttributeSelector::from(tags::QUERY_RETRIEVE_LEVEL),
