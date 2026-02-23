@@ -269,19 +269,16 @@ impl<'a> DicomMultipartStream<'a> {
 			+ 'a,
 		transfer_syntax_uid: Option<&str>,
 	) -> Self {
-		let transfer_syntax_uid = transfer_syntax_uid
-			.map(|ts_uid| TransferSyntaxRegistry.get(&ts_uid))
-			.flatten();
+		let transfer_syntax_uid =
+			transfer_syntax_uid.and_then(|ts_uid| TransferSyntaxRegistry.get(ts_uid));
 
 		let multipart_stream = stream
 			.map(move |item| {
-				let transfer_syntax_uid = transfer_syntax_uid.clone();
+				let transfer_syntax_uid = transfer_syntax_uid;
 				item.and_then(|object| {
 					if let Some(ts) = transfer_syntax_uid {
 						let mut transcoded = (*object).clone();
-						transcoded
-							.transcode(&ts)
-							.map_err(|err| MoveError::Transcode(err))?;
+						transcoded.transcode(ts).map_err(MoveError::Transcode)?;
 						Self::write(&transcoded)
 							.map_err(|err| MoveError::Write(WriteError::Io(err)))
 					} else {
@@ -310,11 +307,10 @@ impl<'a> DicomMultipartStream<'a> {
 		writeln!(buffer, "--boundary\r")?;
 		writeln!(
 			buffer,
-			"Content-Type: {}; transfer-syntax=\"{}\"\r",
-			"application/dicom",
+			"Content-Type: application/dicom; transfer-syntax=\"{}\"\r",
 			file.meta().transfer_syntax.trim_end_matches('\0')
 		)?;
-		writeln!(buffer, "Content-Length: {}\r", file_length)?;
+		writeln!(buffer, "Content-Length: {file_length}\r")?;
 		writeln!(buffer, "\r")?;
 		buffer.append(&mut dcm);
 		writeln!(buffer, "\r")?;

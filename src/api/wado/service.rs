@@ -52,10 +52,10 @@ pub enum RetrieveError {
 impl IntoResponse for RetrieveError {
 	fn into_response(self) -> Response {
 		match self {
-			RetrieveError::Backend { source } => {
+			Self::Backend { source } => {
 				(StatusCode::INTERNAL_SERVER_ERROR, source.to_string()).into_response()
 			}
-			RetrieveError::Unimplemented => Response::builder()
+			Self::Unimplemented => Response::builder()
 				.status(StatusCode::NOT_IMPLEMENTED)
 				.body(Body::from("This transaction is not implemented."))
 				.unwrap(),
@@ -160,7 +160,7 @@ where
 
 /// Extracts the transfer-syntax parameter from an Accept header value.
 ///
-/// According to https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.7.3.5.2.html
+/// According to <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.7.3.5.2.html>
 /// the syntax is: transfer-syntax-mtp = OWS ";" OWS %s"transfer-syntax=" ts-value
 ///
 /// Examples:
