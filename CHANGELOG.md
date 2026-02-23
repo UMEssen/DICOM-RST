@@ -9,30 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- QIDO-RS and MWL services now support `uid-list-matching` syntax for match query parameters. 
-
-### Changed
-
-- Trailing slashes in URLs are now trimmed for all endpoints before processing (`/studies/` and `/studies` are equivalent).
-
-## [0.3.0]
-
-### Added
-
 - New `/rendered` endpoints, rendering the first instance in the requested media type.
-    - Supported rendered media types are:
-        - `image/jpeg` (default)
-        - `image/png`
-    - Support for the `quality` query parameter to control the compression for lossy formats like JPEG.
-    - Support for the `window` query parameter for windowing.
-    - Support for the `viewport` query parameter for cropping and scaling.
+  - Supported rendered media types are:
+    - `image/jpeg` (default)
+    - `image/png`
+  - Support for the `quality` query parameter to control the compression for lossy formats like JPEG.
+  - Support for the `window` query parameter for windowing.
+  - Support for the `viewport` query parameter for cropping and scaling.
 - New `/metadata` endpoints for returning metadata for a given DICOM instance.
-- New `dicom-rst-s3` container image variant
+- New `dicom-rst-s3` container image variant.
+- QIDO-RS and MWL services now support `uid-list-matching` syntax for match query parameters ([GH-46](https://github.com/UMEssen/DICOM-RST/pull/46)).
+- Support for sequence attribute filtering ([GH-49](https://github.com/UMEssen/DICOM-RST/pull/49)).
 
 ### Changed
 
 - Updated `dicom-rs` dependency to 0.9.0
-    - Baseline support for files in deflate transfer syntaxes, such as `Deflated Explicit VR Little Endian`
+  - Baseline support for files in deflate transfer syntaxes, such as `Deflated Explicit VR Little Endian`
+- Trailing slashes in URLs are now trimmed for all endpoints before processing (`/studies/` and `/studies` are equivalent).
+- Return HTTP status code 200 (OK) instead of 204 (No Content) for QIDO-RS/MWL responses where there were no matches ([GH-51](https://github.com/UMEssen/DICOM-RST/pull/51), [CP-2473](https://www.dicomstandard.org/news-dir/current/docs/cpack134/cp2473.pdf)).
 
 ## [0.2.1]
 
@@ -85,12 +79,10 @@ It includes basic support for QIDO-RS, WADO-RS and STOW-RS for the DIMSE backend
 
 - Configurable backend
 - DIMSE backend
-    - Implement QIDO-RS using the C-FIND protocol
-    - Implement WADO-RS using the C-MOVE protocol
-    - Implement STOW-RS using the C-STORE protocol
+  - Implement QIDO-RS using the C-FIND protocol
+  - Implement WADO-RS using the C-MOVE protocol
+  - Implement STOW-RS using the C-STORE protocol
 
 [0.2.0]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.2.0
-
 [0.2.1]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.2.1
-
 [0.3.0]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.3.0
