@@ -13,9 +13,9 @@ permissions:
   pages: write
 
 env:
-  INSTANCE: 'docs/drst'
-  ARTIFACT: 'webHelpDRST2-all.zip'
-  DOCKER_VERSION: '243.21565'
+  INSTANCE: "docs/drst"
+  ARTIFACT: "webHelpDRST2-all.zip"
+  DOCKER_VERSION: "latest"
 
 jobs:
   build:
