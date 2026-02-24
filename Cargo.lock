@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "dicom-rst"
-version = "0.3.0-beta.4"
+version = "0.3.0-beta.5"
 dependencies = [
  "anyhow",
  "async-stream",
