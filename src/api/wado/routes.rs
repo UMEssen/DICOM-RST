@@ -70,6 +70,7 @@ async fn instance_resource(
 	request: RetrieveInstanceRequest,
 ) -> impl IntoResponse {
 	if let Some(wado) = provider.wado {
+		let transfer_syntax = request.transfer_syntax.clone();
 		let study_instance_uid: UI = request.query.study_instance_uid.clone();
 		let response = wado.retrieve(request).await;
 
@@ -92,6 +93,7 @@ async fn instance_resource(
 					)
 					.body(Body::from_stream(DicomMultipartStream::new(
 						stream.into_stream(),
+						transfer_syntax.as_deref(),
 					)))
 					.unwrap()
 			}
@@ -131,6 +133,7 @@ async fn rendered_resource(
 			trace!("Using default rendering");
 			let instance_request = RetrieveInstanceRequest {
 				query: request.query,
+				transfer_syntax: None,
 			};
 
 			let stream = wado

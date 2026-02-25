@@ -87,6 +87,8 @@ pub enum MoveError {
 	#[error(transparent)]
 	Write(#[from] WriteError),
 	#[error(transparent)]
+	Transcode(#[from] dicom::pixeldata::TranscodeError),
+	#[error(transparent)]
 	Association(#[from] PoolError<AssociationError>),
 	#[error("Sub-operation failed")]
 	OperationFailed,
