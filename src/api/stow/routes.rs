@@ -3,7 +3,6 @@ use crate::backend::ServiceProvider;
 use crate::utils::multipart::DicomMultipart;
 use crate::AppState;
 use axum::body::Body;
-use axum::extract::rejection::LengthLimitError;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -12,8 +11,7 @@ use axum::Router;
 use bytes::Buf;
 use dicom::object::{FileDicomObject, InMemDicomObject};
 use dicom_json::DicomJson;
-use multer::Error;
-use tracing::{error, instrument, warn};
+use tracing::instrument;
 
 /// HTTP Router for the Store Transaction
 /// <https://dicom.nema.org/medical/dicom/current/output/html/part18.html#sect_10.5>
@@ -27,64 +25,32 @@ pub fn routes() -> Router<AppState> {
 async fn studies(
 	provider: ServiceProvider,
 	mut multipart: DicomMultipart<'static>,
-) -> impl IntoResponse {
-	let mut instances = Vec::new();
-	while let Some(field) = multipart.next_field().await.unwrap_or_default() {
-		match field.bytes().await {
-			Ok(data) => {
-				// TODO: better error handling
-				let file = FileDicomObject::from_reader(data.reader()).unwrap();
-				instances.push(file);
-			}
-			Err(err) => {
-				let err = if let Error::StreamReadFailed(stream_error) = &err {
-					let is_limit_exceeded = stream_error
-						.downcast_ref::<axum::Error>()
-						.and_then(std::error::Error::source)
-						.and_then(|err| err.downcast_ref::<LengthLimitError>())
-						.is_some();
-
-					if is_limit_exceeded {
-						warn!("Upload limit exceeded.");
-						StoreError::UploadLimitExceeded
-					} else {
-						error!("Failed to read multipart stream: {err:?}");
-						StoreError::Stream(err)
-					}
-				} else {
-					error!("Failed to read multipart stream: {:?}", err);
-					StoreError::Stream(err)
-				};
-				return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
-			}
-		};
-	}
-
-	let request = StoreRequest { instances };
-
-	if let Some(stow) = provider.stow {
-		#[allow(clippy::option_if_let_else)]
-		if let Ok(response) = stow.store(request).await {
-			let json = DicomJson::from(InMemDicomObject::from(response));
-
-			Response::builder()
-				.status(StatusCode::OK)
-				.header(CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
-				.body(Body::from(serde_json::to_string(&json).unwrap()))
-				.unwrap()
-		} else {
-			Response::builder()
-				.status(StatusCode::INTERNAL_SERVER_ERROR)
-				.body(Body::empty())
-				.unwrap()
-		}
-	} else {
-		(
+) -> Result<Response, StoreError> {
+	let Some(stow) = provider.stow else {
+		return Ok((
 			StatusCode::SERVICE_UNAVAILABLE,
 			"STOW-RS endpoint is disabled",
 		)
-			.into_response()
+			.into_response());
+	};
+
+	let mut instances = Vec::new();
+
+	while let Some(field) = multipart.next_field().await? {
+		let data = field.bytes().await?;
+		let file = FileDicomObject::from_reader(data.reader())?;
+		instances.push(file);
 	}
+
+	let request = StoreRequest { instances };
+	let response = stow.store(request).await?;
+	let json = DicomJson::from(InMemDicomObject::from(response));
+
+	Ok(Response::builder()
+		.status(StatusCode::OK)
+		.header(CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+		.body(Body::from(serde_json::to_string(&json).unwrap()))
+		.unwrap())
 }
 
 #[instrument(skip_all)]

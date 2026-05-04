@@ -52,10 +52,17 @@ bytes = "1.10.1"
 multer = "3.1.0"
 pin-project = "1.1.10"
 image = { version = "0.25.8", features = ["png", "jpeg", "gif"] }
+http-body-util = "0.1.3"
+
 # S3 backend
 aws-config = { version = "1.8.14", features = ["behavior-version-latest"], optional = true }
 aws-sdk-s3 = { version = "1.124.0", optional = true }
 aws-credential-types = { version = "1.2.13", optional = true }
+
+[dev-dependencies]
+testcontainers = "0.27.3"
+dicom-test-files = "0.4.0"
+dicom-web = "0.5.0"
 
 [lints.rust]
 unsafe_code = "forbid"
