@@ -160,9 +160,11 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let addr = SocketAddr::from((host, port));
 	let listener = TcpListener::bind(addr).await?;
 
+	let server_addr = listener.local_addr()?;
+
 	info!(
-		server.address = addr.ip().to_string(),
-		server.port = addr.port(),
+		server.address = server_addr.ip().to_string(),
+		server.port = server_addr.port(),
 		url.full = config.server.http.base_url()?.as_str(),
 		"Started DICOMweb server"
 	);
