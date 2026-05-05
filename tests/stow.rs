@@ -11,12 +11,19 @@ use std::time::{Duration, Instant};
 #[tokio::test]
 async fn can_upload_study_instances() -> anyhow::Result<()> {
 	let config = "
+        server:
+          http:
+            port: 0
+          dimse:
+            - aet: DICOM-RST
+              interface: 0.0.0.0
+              port: 0
         aets:
           - aet: ORTHANC
             host: 127.0.0.1
             port: ${ORTHANC_PORT}
             backend: DIMSE
-	";
+    ";
 
 	let instances = [
 		"pydicom/liver.dcm",
@@ -26,7 +33,7 @@ async fn can_upload_study_instances() -> anyhow::Result<()> {
 	.map(|path| open_file(dicom_test_files::path(path).unwrap()).unwrap());
 	let instances = futures::stream::iter(instances);
 
-	with_test_deployment(&config, async |client| {
+	with_test_environment(config, async |client| {
 		let response = client
 			.store_instances()
 			.with_instances(instances.clone())
@@ -67,6 +74,13 @@ async fn can_upload_study_instances() -> anyhow::Result<()> {
 #[tokio::test]
 async fn does_not_leak_semaphore_permits_if_association_is_rejected() -> anyhow::Result<()> {
 	let config = "
+        server:
+          http:
+            port: 0
+          dimse:
+            - aet: DICOM-RST
+              interface: 0.0.0.0
+              port: 0
         aets:
           - aet: ORTHANC
             host: 127.0.0.1
@@ -88,7 +102,7 @@ async fn does_not_leak_semaphore_permits_if_association_is_rejected() -> anyhow:
 	};
 	let instances = [create_instance(), create_instance(), create_instance()];
 
-	with_test_deployment(config, async |client| {
+	with_test_environment(config, async |client| {
 		let start = Instant::now();
 		let response = client
 			.store_instances()
@@ -124,7 +138,12 @@ async fn returns_413_if_max_upload_size_is_exceeded() -> anyhow::Result<()> {
 	let config = "
         server:
           http:
+            port: 0
             max-upload-size: 1
+          dimse:
+            - aet: DICOM-RST
+              interface: 0.0.0.0
+              port: 0
         aets:
           - aet: ORTHANC
             host: 127.0.0.1
@@ -132,7 +151,7 @@ async fn returns_413_if_max_upload_size_is_exceeded() -> anyhow::Result<()> {
             backend: DIMSE
 	";
 
-	with_test_deployment(config, async |client| {
+	with_test_environment(config, async |client| {
 		let instance = open_file(dicom_test_files::path("pydicom/CT_small.dcm").unwrap()).unwrap();
 		let result = client
 			.store_instances()

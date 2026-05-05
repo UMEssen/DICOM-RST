@@ -8,12 +8,7 @@ use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage};
 use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdout, Command};
-use tokio::time::{timeout_at, Instant};
 
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
-const STARTED_MESSAGE: &str = "Started DICOMweb server";
-
-/// Spawns a container running the latest version of Orthanc.
 pub async fn spawn_orthanc() -> anyhow::Result<ContainerAsync<GenericImage>> {
 	GenericImage::new("jodogne/orthanc", "latest")
 		.with_exposed_port(4242.tcp())
@@ -24,10 +19,9 @@ pub async fn spawn_orthanc() -> anyhow::Result<ContainerAsync<GenericImage>> {
 		.context("failed to start Orthanc container")
 }
 
-/// Spawns the DICOM-RST binary with the given config and waits until it is ready.
 pub async fn spawn_dicomrst(config: &str) -> anyhow::Result<ServerProcess> {
 	let mut server = ServerProcess::spawn(config)?;
-	server.wait_until_started().await?;
+	server.http_port = server.wait_until_started().await?;
 	Ok(server)
 }
 
@@ -35,6 +29,7 @@ pub struct ServerProcess {
 	child: Child,
 	stdout: Lines<BufReader<ChildStdout>>,
 	workdir: PathBuf,
+	http_port: u16,
 }
 
 impl ServerProcess {
@@ -46,46 +41,52 @@ impl ServerProcess {
 
 		let mut child = Command::new(env!("CARGO_BIN_EXE_dicom-rst"))
 			.stdout(Stdio::piped())
-			.stderr(Stdio::piped())
+			.stderr(Stdio::null())
+			.env("NO_COLOR", "true") // disables colored ANSI output
 			.current_dir(&workdir)
 			.spawn()
 			.context("failed to spawn DICOM-RST server binary")?;
 
 		let stdout = BufReader::new(child.stdout.take().unwrap()).lines();
-		let mut stderr = BufReader::new(child.stderr.take().unwrap()).lines();
-
-		tokio::spawn(async move {
-			while let Ok(Some(line)) = stderr.next_line().await {
-				eprintln!("[dicom-rst] {line}");
-			}
-		});
 
 		Ok(Self {
 			child,
 			stdout,
 			workdir,
+			http_port: 0,
 		})
 	}
 
-	async fn wait_until_started(&mut self) -> anyhow::Result<()> {
-		let deadline = Instant::now() + STARTUP_TIMEOUT;
+	async fn wait_until_started(&mut self) -> anyhow::Result<u16> {
+		tokio::time::timeout(Duration::from_secs(15), async {
+			while let Some(line) = self
+				.stdout
+				.next_line()
+				.await
+				.context("Failed to read DICOM-RST stdout")?
+			{
+				if !line.contains("Started DICOMweb server") {
+					continue;
+				}
 
-		loop {
-			match timeout_at(deadline, self.stdout.next_line()).await {
-				Ok(Ok(Some(line))) => {
-					eprintln!("[dicom-rst] {line}");
-					if line.contains(STARTED_MESSAGE) {
-						return Ok(());
-					}
-				}
-				Ok(Ok(None)) => {
-					let status = self.child.wait().await?;
-					bail!("DICOM-RST exited before becoming ready: {status}");
-				}
-				Ok(Err(e)) => return Err(e).context("failed to read DICOM-RST stdout"),
-				Err(_) => bail!("timed out waiting for `{STARTED_MESSAGE}`"),
+				let port = line
+					.split_whitespace()
+					.find_map(|part| part.strip_prefix("server.port="))
+					.ok_or_else(|| {
+						anyhow::Error::msg(
+							"DICOM-RST started, but stdout did not contain server.port=",
+						)
+					})?
+					.parse::<u16>()
+					.context("Failed to parse DICOM-RST server.port as u16")?;
+
+				return Ok(port);
 			}
-		}
+
+			bail!("DICOM-RST exited before becoming ready");
+		})
+		.await
+		.context("Timed out waiting for DICOM-RST to start")?
 	}
 }
 
@@ -96,7 +97,7 @@ impl Drop for ServerProcess {
 	}
 }
 
-pub async fn with_test_deployment(
+pub async fn with_test_environment(
 	config: &str,
 	test: impl AsyncFnOnce(DicomWebClient) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
@@ -107,9 +108,12 @@ pub async fn with_test_deployment(
 		.context("failed to get mapped Orthanc DIMSE port")?;
 
 	let config = config.replace("${ORTHANC_PORT}", &orthanc_port.to_string());
-	let _server = spawn_dicomrst(&config).await?;
+	let server = spawn_dicomrst(&config).await?;
 
-	let client = DicomWebClient::with_single_url(&format!("http://localhost:8080/aets/ORTHANC"));
+	let client = DicomWebClient::with_single_url(&format!(
+		"http://localhost:{}/aets/ORTHANC",
+		server.http_port
+	));
 	test(client).await?;
 
 	Ok(())

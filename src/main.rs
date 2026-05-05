@@ -45,7 +45,6 @@ fn init_logger(level: tracing::Level) {
 		.with(
 			tracing_subscriber::fmt::layer()
 				.compact()
-				.with_ansi(true)
 				.with_file(false)
 				.with_line_number(false)
 				.with_target(false),
