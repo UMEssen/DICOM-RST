@@ -43,6 +43,7 @@ impl FindServiceClassUser {
 		Self { pool, timeout }
 	}
 
+	#[allow(clippy::significant_drop_tightening)]
 	pub fn invoke(
 		&self,
 		options: FindServiceClassUserOptions,

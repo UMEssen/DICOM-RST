@@ -85,7 +85,7 @@ async fn instance_resource(
 				Response::builder()
 					.header(
 						CONTENT_DISPOSITION,
-						format!(r#"attachment; filename="{study_instance_uid}""#,),
+						format!(r#"attachment; filename="{study_instance_uid}""#),
 					)
 					.header(
 						CONTENT_TYPE,

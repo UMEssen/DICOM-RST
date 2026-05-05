@@ -14,6 +14,7 @@ use crate::config::{AppConfig, HttpServerConfig};
 use crate::types::AE;
 use association::pool::AssociationPools;
 use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::StatusCode;
 use axum::response::Response;
 use axum::ServiceExt;
 use std::net::SocketAddr;
@@ -143,9 +144,10 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 				.on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
 		)
 		.layer(DefaultBodyLimit::max(config.server.http.max_upload_size))
-		.layer(TimeoutLayer::new(Duration::from_secs(
-			config.server.http.request_timeout,
-		)))
+		.layer(TimeoutLayer::with_status_code(
+			StatusCode::REQUEST_TIMEOUT,
+			Duration::from_secs(config.server.http.request_timeout),
+		))
 		.with_state(app_state);
 
 	let app = NormalizePathLayer::trim_trailing_slash().layer(app);

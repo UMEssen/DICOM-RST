@@ -34,8 +34,7 @@ pub struct ServerProcess {
 
 impl ServerProcess {
 	fn spawn(config: &str) -> anyhow::Result<Self> {
-		let workdir =
-			std::env::temp_dir().join(format!("dicom-rst-{}", uuid::Uuid::new_v4().to_string()));
+		let workdir = std::env::temp_dir().join(format!("dicom-rst-{}", uuid::Uuid::new_v4()));
 		std::fs::create_dir_all(&workdir)?;
 		std::fs::write(workdir.join("config.yaml"), config)?;
 

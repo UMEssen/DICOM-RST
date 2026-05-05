@@ -8,6 +8,7 @@ use dicom::object::open_file;
 use dicom_web::DicomWebError;
 use std::time::{Duration, Instant};
 
+#[allow(clippy::redundant_closure_for_method_calls)]
 #[tokio::test]
 async fn can_upload_study_instances() -> anyhow::Result<()> {
 	let config = "

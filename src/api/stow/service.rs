@@ -102,17 +102,17 @@ pub enum StoreError {
 impl IntoResponse for StoreError {
 	fn into_response(self) -> axum::response::Response {
 		match self {
-			StoreError::UploadLimitExceeded => Response::builder()
+			Self::UploadLimitExceeded => Response::builder()
 				.status(StatusCode::PAYLOAD_TOO_LARGE)
 				.body(Body::from("Upload limit exceeded"))
 				.unwrap(),
-			StoreError::Stream(err) => Response::builder()
+			Self::Stream(err) => Response::builder()
 				.status(StatusCode::BAD_REQUEST)
 				.body(Body::from(format!(
 					"Failed to read multipart stream: {err:#}"
 				)))
 				.unwrap(),
-			StoreError::ReadDicomFile(err) => Response::builder()
+			Self::ReadDicomFile(err) => Response::builder()
 				.status(StatusCode::BAD_REQUEST)
 				.body(Body::from(format!("Failed to read DICOM file: {err:#}")))
 				.unwrap(),
@@ -130,10 +130,10 @@ impl From<multer::Error> for StoreError {
 				.is_some();
 
 			if is_limit_exceeded {
-				return StoreError::UploadLimitExceeded;
+				return Self::UploadLimitExceeded;
 			}
 		}
 
-		StoreError::Stream(error)
+		Self::Stream(error)
 	}
 }
