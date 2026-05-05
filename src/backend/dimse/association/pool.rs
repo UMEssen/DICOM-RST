@@ -11,7 +11,7 @@ use futures::TryFutureExt;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 use tracing::{info, warn};
 
@@ -45,7 +45,7 @@ impl<M: Manager> Pool<M> {
 			inner: Arc::new(InnerPool {
 				manager,
 				slots: Mutex::new(VecDeque::new()),
-				semaphore: Semaphore::new(pool_size),
+				semaphore: Arc::new(Semaphore::new(pool_size)),
 				timeout,
 			}),
 		}
@@ -53,12 +53,10 @@ impl<M: Manager> Pool<M> {
 
 	pub async fn get(&self, parameter: M::Parameter) -> Result<Object<M>, PoolError<M::Error>> {
 		let timeout = tokio::time::timeout(self.inner.timeout, async {
-			self.inner
-				.semaphore
-				.acquire()
+			let permit = Arc::clone(&self.inner.semaphore)
+				.acquire_owned()
 				.await
-				.expect("Semaphore should not be closed")
-				.forget();
+				.expect("Semaphore should not be closed");
 
 			let slot: Option<ObjectInner<M>> = {
 				let mut slots = self.inner.slots.lock().unwrap();
@@ -117,6 +115,7 @@ impl<M: Manager> Pool<M> {
 			Ok(Object {
 				pool: Arc::downgrade(&self.inner),
 				inner: Some(object_inner),
+				permit,
 			})
 		});
 
@@ -127,6 +126,8 @@ impl<M: Manager> Pool<M> {
 pub struct Object<M: Manager> {
 	pool: Weak<InnerPool<M>>,
 	inner: Option<ObjectInner<M>>,
+	#[allow(unused)]
+	permit: OwnedSemaphorePermit,
 }
 
 impl<M: Manager> Deref for Object<M> {
@@ -140,7 +141,6 @@ impl<M: Manager> Deref for Object<M> {
 impl<M: Manager> Drop for Object<M> {
 	fn drop(&mut self) {
 		if let Some(pool) = self.pool.upgrade() {
-			pool.semaphore.add_permits(1);
 			if let Some(object) = self.inner.take() {
 				let mut slots = pool.slots.lock().unwrap();
 				slots.push_back(object);
@@ -160,7 +160,7 @@ impl<M: Manager> Clone for Pool<M> {
 struct InnerPool<M: Manager> {
 	manager: M,
 	slots: Mutex<VecDeque<ObjectInner<M>>>,
-	semaphore: Semaphore,
+	semaphore: Arc<Semaphore>,
 	timeout: Duration,
 }
 

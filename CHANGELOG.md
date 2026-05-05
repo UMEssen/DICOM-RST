@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Correctly return 413 (Payload Too Large) if the request body exceeds the configured `max-upload-size`.
+- The association pool no longer leaks semaphore permits when the association is rejected ([GH-56](https://github.com/UMEssen/DICOM-RST/issues/56)).
 
 ## [0.2.1]
 
