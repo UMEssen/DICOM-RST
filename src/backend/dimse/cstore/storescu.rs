@@ -21,6 +21,7 @@ impl StoreServiceClassUser {
 		Self { pool, timeout }
 	}
 
+	#[allow(clippy::significant_drop_tightening)]
 	pub async fn store(&self, file: FileDicomObject<InMemDicomObject>) -> Result<(), StoreError> {
 		let association = self
 			.pool

@@ -14,6 +14,7 @@ use crate::config::{AppConfig, HttpServerConfig};
 use crate::types::AE;
 use association::pool::AssociationPools;
 use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::StatusCode;
 use axum::response::Response;
 use axum::ServiceExt;
 use std::net::SocketAddr;
@@ -45,7 +46,6 @@ fn init_logger(level: tracing::Level) {
 		.with(
 			tracing_subscriber::fmt::layer()
 				.compact()
-				.with_ansi(true)
 				.with_file(false)
 				.with_line_number(false)
 				.with_target(false),
@@ -144,9 +144,10 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 				.on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
 		)
 		.layer(DefaultBodyLimit::max(config.server.http.max_upload_size))
-		.layer(TimeoutLayer::new(Duration::from_secs(
-			config.server.http.request_timeout,
-		)))
+		.layer(TimeoutLayer::with_status_code(
+			StatusCode::REQUEST_TIMEOUT,
+			Duration::from_secs(config.server.http.request_timeout),
+		))
 		.with_state(app_state);
 
 	let app = NormalizePathLayer::trim_trailing_slash().layer(app);
@@ -160,9 +161,11 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let addr = SocketAddr::from((host, port));
 	let listener = TcpListener::bind(addr).await?;
 
+	let server_addr = listener.local_addr()?;
+
 	info!(
-		server.address = addr.ip().to_string(),
-		server.port = addr.port(),
+		server.address = server_addr.ip().to_string(),
+		server.port = server_addr.port(),
 		url.full = config.server.http.base_url()?.as_str(),
 		"Started DICOMweb server"
 	);

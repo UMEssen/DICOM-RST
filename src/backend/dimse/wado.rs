@@ -271,7 +271,7 @@ impl<'a> DicomMultipartStream<'a> {
 	) -> Self {
 		let transfer_syntax_uid =
 			transfer_syntax_uid.and_then(|ts_uid| TransferSyntaxRegistry.get(ts_uid));
-
+		#[allow(clippy::result_large_err)]
 		let multipart_stream = stream
 			.map(move |item| {
 				let transfer_syntax_uid = transfer_syntax_uid;

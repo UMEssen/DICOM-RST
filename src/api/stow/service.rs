@@ -1,5 +1,8 @@
 use crate::types::UI;
 use async_trait::async_trait;
+use axum::body::Body;
+use axum::http::{Response, StatusCode};
+use axum::response::IntoResponse;
 use dicom::core::value::{DataSetSequence, Value};
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
@@ -91,5 +94,46 @@ pub enum StoreError {
 	#[error("The file exceeds the configured upload size limit")]
 	UploadLimitExceeded,
 	#[error(transparent)]
-	Stream(#[from] multer::Error),
+	Stream(multer::Error),
+	#[error(transparent)]
+	ReadDicomFile(#[from] dicom::object::ReadError),
+}
+
+impl IntoResponse for StoreError {
+	fn into_response(self) -> axum::response::Response {
+		match self {
+			Self::UploadLimitExceeded => Response::builder()
+				.status(StatusCode::PAYLOAD_TOO_LARGE)
+				.body(Body::from("Upload limit exceeded"))
+				.unwrap(),
+			Self::Stream(err) => Response::builder()
+				.status(StatusCode::BAD_REQUEST)
+				.body(Body::from(format!(
+					"Failed to read multipart stream: {err:#}"
+				)))
+				.unwrap(),
+			Self::ReadDicomFile(err) => Response::builder()
+				.status(StatusCode::BAD_REQUEST)
+				.body(Body::from(format!("Failed to read DICOM file: {err:#}")))
+				.unwrap(),
+		}
+	}
+}
+
+impl From<multer::Error> for StoreError {
+	fn from(error: multer::Error) -> Self {
+		if let multer::Error::StreamReadFailed(stream_error) = &error {
+			let is_limit_exceeded = stream_error
+				.downcast_ref::<axum::Error>()
+				.and_then(std::error::Error::source)
+				.and_then(|err| err.downcast_ref::<http_body_util::LengthLimitError>())
+				.is_some();
+
+			if is_limit_exceeded {
+				return Self::UploadLimitExceeded;
+			}
+		}
+
+		Self::Stream(error)
+	}
 }

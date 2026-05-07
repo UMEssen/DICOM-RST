@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Trailing slashes in URLs are now trimmed for all endpoints before processing (`/studies/` and `/studies` are equivalent).
 - Return HTTP status code 200 (OK) instead of 204 (No Content) for QIDO-RS/MWL responses where there were no matches ([GH-51](https://github.com/UMEssen/DICOM-RST/pull/51), [CP-2473](https://www.dicomstandard.org/news-dir/current/docs/cpack134/cp2473.pdf)).
 
+### Fixed
+
+- Correctly return 413 (Payload Too Large) if the request body exceeds the configured `max-upload-size`.
+- The association pool no longer leaks semaphore permits when the association is rejected ([GH-56](https://github.com/UMEssen/DICOM-RST/issues/56)).
+
 ## [0.2.1]
 
 ### Added

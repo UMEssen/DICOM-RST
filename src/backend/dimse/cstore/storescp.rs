@@ -44,7 +44,13 @@ impl StoreServiceClassProvider {
 	pub async fn spawn(&self) -> anyhow::Result<()> {
 		let address = SocketAddr::from((self.inner.config.interface, self.inner.config.port));
 		let listener = TcpListener::bind(&address).await?;
-		info!("Started Store Service Class Provider on {}", address);
+		let server_addr = listener.local_addr()?;
+
+		info!(
+			server.address = server_addr.ip().to_string(),
+			server.port = server_addr.port(),
+			"Started Store Service Class Provider"
+		);
 		loop {
 			match listener.accept().await {
 				Ok((stream, peer)) => {

@@ -23,6 +23,7 @@ impl MoveServiceClassUser {
 	}
 
 	#[instrument(skip_all, name = "MOVE-SCU")]
+	#[allow(clippy::significant_drop_tightening)]
 	pub async fn invoke(&self, request: CompositeMoveRequest) -> Result<(), MoveError> {
 		let association = self
 			.pool
