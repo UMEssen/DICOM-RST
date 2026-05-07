@@ -17,7 +17,10 @@ use async_stream::stream;
 use async_trait::async_trait;
 use dicom::core::VR;
 use dicom::dictionary_std::tags;
+use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileDicomObject, InMemDicomObject};
+use dicom::transfer_syntax::TransferSyntaxRegistry;
+use dicom_pixeldata::Transcode;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use pin_project::pin_project;
@@ -104,6 +107,7 @@ impl WadoService for DimseWadoService {
 	async fn metadata(&self, request: MetadataRequest) -> Result<InstanceResponse, RetrieveError> {
 		self.retrieve(RetrieveInstanceRequest {
 			query: request.query,
+			transfer_syntax: None,
 		})
 		.await
 	}
@@ -263,11 +267,23 @@ impl<'a> DicomMultipartStream<'a> {
 		stream: impl Stream<Item = Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>>
 			+ Send
 			+ 'a,
+		transfer_syntax_uid: Option<&str>,
 	) -> Self {
+		let transfer_syntax_uid =
+			transfer_syntax_uid.and_then(|ts_uid| TransferSyntaxRegistry.get(ts_uid));
+
 		let multipart_stream = stream
-			.map(|item| {
+			.map(move |item| {
+				let transfer_syntax_uid = transfer_syntax_uid;
 				item.and_then(|object| {
-					Self::write(&object).map_err(|err| MoveError::Write(WriteError::Io(err)))
+					if let Some(ts) = transfer_syntax_uid {
+						let mut transcoded = (*object).clone();
+						transcoded.transcode(ts).map_err(MoveError::Transcode)?;
+						Self::write(&transcoded)
+							.map_err(|err| MoveError::Write(WriteError::Io(err)))
+					} else {
+						Self::write(&object).map_err(|err| MoveError::Write(WriteError::Io(err)))
+					}
 				})
 			})
 			.chain(futures::stream::once(async {
@@ -289,7 +305,11 @@ impl<'a> DicomMultipartStream<'a> {
 		let mut buffer = Vec::new();
 
 		writeln!(buffer, "--boundary\r")?;
-		writeln!(buffer, "Content-Type: application/dicom\r")?;
+		writeln!(
+			buffer,
+			"Content-Type: application/dicom; transfer-syntax=\"{}\"\r",
+			file.meta().transfer_syntax.trim_end_matches('\0')
+		)?;
 		writeln!(buffer, "Content-Length: {file_length}\r")?;
 		writeln!(buffer, "\r")?;
 		buffer.append(&mut dcm);

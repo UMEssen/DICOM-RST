@@ -52,10 +52,10 @@ pub enum RetrieveError {
 impl IntoResponse for RetrieveError {
 	fn into_response(self) -> Response {
 		match self {
-			RetrieveError::Backend { source } => {
+			Self::Backend { source } => {
 				(StatusCode::INTERNAL_SERVER_ERROR, source.to_string()).into_response()
 			}
-			RetrieveError::Unimplemented => Response::builder()
+			Self::Unimplemented => Response::builder()
 				.status(StatusCode::NOT_IMPLEMENTED)
 				.body(Body::from("This transaction is not implemented."))
 				.unwrap(),
@@ -64,6 +64,7 @@ impl IntoResponse for RetrieveError {
 }
 pub struct RetrieveInstanceRequest {
 	pub query: ResourceQuery,
+	pub transfer_syntax: Option<String>,
 }
 
 pub struct ThumbnailRequest {
@@ -157,6 +158,33 @@ where
 	}
 }
 
+/// Extracts the transfer-syntax parameter from an Accept header value.
+///
+/// According to <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.7.3.5.2.html>
+/// the syntax is: transfer-syntax-mtp = OWS ";" OWS %s"transfer-syntax=" ts-value
+///
+/// Examples:
+/// - "application/dicom; transfer-syntax=1.2.840.10008.1.2.4.50"
+/// - "multipart/related; type=\"application/dicom\"; transfer-syntax=1.2.840.10008.1.2.4.50"
+fn extract_transfer_syntax_from_accept(accept_header: &str) -> Option<String> {
+	// Split by semicolons to get individual parameters
+	for part in accept_header.split(';') {
+		let trimmed = part.trim();
+		// Look for the transfer-syntax parameter
+		if let Some(value) = trimmed.strip_prefix("transfer-syntax=") {
+			let value = value.trim();
+			// The value might be quoted or unquoted
+			let transfer_syntax = if value.starts_with('"') && value.ends_with('"') {
+				value.trim_matches('"')
+			} else {
+				value
+			};
+			return Some(transfer_syntax.to_string());
+		}
+	}
+	None
+}
+
 impl<S> FromRequestParts<S> for RetrieveInstanceRequest
 where
 	AppState: FromRef<S>,
@@ -169,7 +197,21 @@ where
 			.await
 			.map_err(PathRejection::into_response)?;
 
-		Ok(Self { query })
+		let accept = parts
+			.headers
+			.get(ACCEPT)
+			.map(|h| String::from(h.to_str().unwrap_or_default()));
+
+		// Extract the requested transfer-syntax from the Accept header if present
+		// https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_8.7.3.5.2.html
+		let transfer_syntax = accept
+			.as_ref()
+			.and_then(|accept_str| extract_transfer_syntax_from_accept(accept_str));
+
+		Ok(Self {
+			query,
+			transfer_syntax,
+		})
 	}
 }
 
@@ -453,6 +495,59 @@ mod tests {
 		assert_eq!(
 			"0".parse::<ImageQuality>().unwrap(),
 			ImageQuality::new(0).unwrap()
+		);
+	}
+
+	#[test]
+	fn test_extract_transfer_syntax_from_accept() {
+		// Test simple case
+		assert_eq!(
+			extract_transfer_syntax_from_accept(
+				"application/dicom; transfer-syntax=1.2.840.10008.1.2.4.50"
+			),
+			Some("1.2.840.10008.1.2.4.50".to_string())
+		);
+
+		// Test with extra whitespace
+		assert_eq!(
+			extract_transfer_syntax_from_accept(
+				"application/dicom;   transfer-syntax=1.2.840.10008.1.2.4.50"
+			),
+			Some("1.2.840.10008.1.2.4.50".to_string())
+		);
+
+		// Test wildcard
+		assert_eq!(
+			extract_transfer_syntax_from_accept("application/dicom; transfer-syntax=*"),
+			Some("*".to_string())
+		);
+
+		// Test multipart/related with type parameter
+		assert_eq!(
+			extract_transfer_syntax_from_accept("multipart/related; type=\"application/dicom\"; transfer-syntax=1.2.840.10008.1.2.4.50"),
+			Some("1.2.840.10008.1.2.4.50".to_string())
+		);
+
+		// Test with quoted value (though not typical for transfer-syntax)
+		assert_eq!(
+			extract_transfer_syntax_from_accept(
+				"application/dicom; transfer-syntax=\"1.2.840.10008.1.2.4.50\""
+			),
+			Some("1.2.840.10008.1.2.4.50".to_string())
+		);
+
+		// Test without transfer-syntax parameter
+		assert_eq!(
+			extract_transfer_syntax_from_accept("application/dicom"),
+			None
+		);
+
+		// Test with other parameters but no transfer-syntax
+		assert_eq!(
+			extract_transfer_syntax_from_accept(
+				"multipart/related; type=\"application/dicom\"; boundary=example"
+			),
+			None
 		);
 	}
 
