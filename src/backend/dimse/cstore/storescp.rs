@@ -92,10 +92,14 @@ impl StoreServiceClassProvider {
 
 		// Duration::MAX to indefinitely wait for incoming messages
 		while let Ok(message) = association.read_message(Duration::MAX).await {
+			let pctx_id = message
+				.presentation_context_id
+				.context("Missing presentation context id in received message")?;
 			let pctx = association
 				.presentation_contexts()
-				.first()
-				.context("No presentation context available")?;
+				.iter()
+				.find(|pctx| pctx.id == pctx_id)
+				.context("No negotiated presentation context matches the received message")?;
 			debug!(
 				"Used transfer syntax {} to read message",
 				pctx.transfer_syntax
