@@ -81,6 +81,8 @@ aets:
 telemetry:
   sentry: https://sentry.local/dsn
   level: INFO
+  audit:
+    enabled: false
 ```
 
 <deflist>
@@ -97,6 +99,20 @@ telemetry:
           <li>DEBUG</li>
           <li>TRACE</li>
         </list>
+    </def>
+    <def title="telemetry.audit.enabled">
+        Structured access-audit logging (default <code>false</code>).
+        When enabled, every HTTP request emits one self-contained JSON line
+        on stdout: timestamp, caller identity (read from the
+        <code>X-Auth-Request-User</code>/<code>X-Auth-Request-Email</code>
+        headers an authenticating reverse proxy such as oauth2-proxy
+        injects), source IP, method, path, the DICOM coordinates
+        (<code>aet</code>, <code>study</code>, <code>series</code>,
+        <code>instance</code>), response status and duration. Intended for
+        healthcare access-audit requirements; delivery is fail-open
+        (bounded buffer — a slow log consumer never blocks requests, drops
+        are counted and logged). The identity headers are trustworthy only
+        when the proxy is the sole ingress to DICOM-RST.
     </def>
 </deflist>
 
