@@ -25,11 +25,11 @@
 
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{RawPathParams, Request, State};
 use axum::middleware::Next;
 use axum::response::Response;
+use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -180,7 +180,7 @@ pub async fn middleware(
 
 	sink.emit(AuditRecord {
 		audit: "http-access",
-		ts: rfc3339_utc(SystemTime::now()),
+		ts: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
 		user,
 		subject,
 		source,
@@ -198,51 +198,9 @@ pub async fn middleware(
 	response
 }
 
-/// Minimal RFC 3339 UTC formatter (second precision) — avoids a date-time
-/// dependency for one format. Civil-date algorithm from Howard Hinnant's
-/// `days_from_civil` inverse (public domain).
-fn rfc3339_utc(time: SystemTime) -> String {
-	let secs = time
-		.duration_since(UNIX_EPOCH)
-		.map(|duration| duration.as_secs())
-		.unwrap_or_default();
-	let days = i64::try_from(secs / 86_400).unwrap_or_default();
-	let rem = secs % 86_400;
-	let (hour, minute, second) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-
-	let z = days + 719_468;
-	let era = z.div_euclid(146_097);
-	let doe = z.rem_euclid(146_097);
-	let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-	let year = yoe + era * 400;
-	let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-	let mp = (5 * doy + 2) / 153;
-	let day = doy - (153 * mp + 2) / 5 + 1;
-	let month = if mp < 10 { mp + 3 } else { mp - 9 };
-	let year = if month <= 2 { year + 1 } else { year };
-
-	format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::time::Duration;
-
-	#[test]
-	fn rfc3339_epoch() {
-		assert_eq!(rfc3339_utc(UNIX_EPOCH), "1970-01-01T00:00:00Z");
-	}
-
-	#[test]
-	fn rfc3339_known_instants() {
-		// 2026-08-17T17:16:55Z
-		let time = UNIX_EPOCH + Duration::from_secs(1_786_987_015);
-		assert_eq!(rfc3339_utc(time), "2026-08-17T17:16:55Z");
-		// Leap-year day: 2024-02-29T12:34:56Z
-		let leap = UNIX_EPOCH + Duration::from_secs(1_709_210_096);
-		assert_eq!(rfc3339_utc(leap), "2024-02-29T12:34:56Z");
-	}
 
 	#[test]
 	fn record_serializes_without_absent_fields() {
