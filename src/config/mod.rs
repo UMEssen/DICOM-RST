@@ -340,6 +340,9 @@ pub struct TelemetryConfig {
 	pub sentry: Option<String>,
 	#[serde(deserialize_with = "deserialize_log_level")]
 	pub level: tracing::Level,
+	/// Structured access-audit logging — see [`crate::audit`].
+	#[serde(default)]
+	pub audit: AuditConfig,
 }
 
 impl Default for TelemetryConfig {
@@ -347,8 +350,22 @@ impl Default for TelemetryConfig {
 		Self {
 			sentry: None,
 			level: tracing::Level::INFO,
+			audit: AuditConfig::default(),
 		}
 	}
+}
+
+/// Configuration for the structured access-audit log ([`crate::audit`]).
+///
+/// Disabled by default: enabling it emits one JSON line per HTTP request on
+/// stdout, carrying the identity injected by an authenticating reverse proxy
+/// (`X-Auth-Request-*`) plus the DICOM resource coordinates. Delivery is
+/// fail-open (bounded buffer, drops are counted and logged).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct AuditConfig {
+	#[serde(default)]
+	pub enabled: bool,
 }
 
 /// Deserializer for [`tracing::Level`] as it does not implement [Deserialize]

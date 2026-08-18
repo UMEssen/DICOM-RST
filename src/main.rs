@@ -1,6 +1,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 pub(crate) mod api;
+pub(crate) mod audit;
 pub(crate) mod backend;
 pub(crate) mod config;
 pub(crate) mod rendering;
@@ -17,6 +18,7 @@ use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::ServiceExt;
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -46,6 +48,9 @@ fn init_logger(level: tracing::Level) {
 		.with(
 			tracing_subscriber::fmt::layer()
 				.compact()
+				// ANSI escapes belong on terminals, not in collected pod
+				// logs (they garble downstream log pipelines).
+				.with_ansi(std::io::stdout().is_terminal())
 				.with_file(false)
 				.with_line_number(false)
 				.with_target(false),
@@ -134,6 +139,8 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		});
 	}
 
+	let audit_sink = audit::AuditSink::new(config.telemetry.audit.enabled);
+
 	let app = api::routes(&config.server.http.base_path)
 		.layer(CorsLayer::permissive())
 		.layer(axum::middleware::from_fn(add_common_headers))
@@ -147,6 +154,12 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		.layer(TimeoutLayer::with_status_code(
 			StatusCode::REQUEST_TIMEOUT,
 			Duration::from_secs(config.server.http.request_timeout),
+		))
+		// Outside the timeout layer, so timed-out requests are audited
+		// with their 408 as well. No-op unless telemetry.audit.enabled.
+		.layer(axum::middleware::from_fn_with_state(
+			audit_sink,
+			audit::middleware,
 		))
 		.with_state(app_state);
 
