@@ -16,7 +16,7 @@ pub struct StoreRequest {
 }
 
 /// <https://dicom.nema.org/medical/dicom/current/output/html/part03.html#table_10-11>
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InstanceReference {
 	pub sop_class_uid: UI,
 	pub sop_instance_uid: UI,
