@@ -1,5 +1,6 @@
 use super::{oneshot, AskPattern, Association, AssociationError, ChannelError, Command, Sender};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
+use dicom::ul::association::Association as _;
 use dicom::ul::pdu::Pdu;
 use dicom::ul::pdu::PresentationContextNegotiated;
 use std::convert::identity;
@@ -49,7 +50,7 @@ impl ServerAssociation {
 				let mut association = match server_options.establish(options.tcp_stream) {
 					Ok(mut association) => {
 						info!(
-							calling_aet = association.client_ae_title(),
+							calling_aet = association.peer_ae_title(),
 							called_aet = options.aet,
 							"Established new server association"
 						);
