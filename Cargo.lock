@@ -1698,6 +1698,7 @@ dependencies = [
  "mime",
  "multer",
  "pin-project",
+ "reqwest 0.13.3",
  "sentry",
  "serde",
  "serde_json",

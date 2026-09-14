@@ -4,6 +4,9 @@
 //!   It depends on a store service class provider that must run in the background.
 //! - STOR-RS is implemented as a store service class user (C-STORE service).
 //! - MWL-RS is implemented as a find service class user (C-FIND service).
+//! - Storage Commitment is implemented as an N-ACTION service class user.
+//!   The N-EVENT-REPORT that reports the result is received by the same store service class
+//!   provider that receives C-STORE requests.
 //!
 
 mod cfind;
@@ -13,6 +16,7 @@ mod cstore;
 pub mod association;
 pub mod mwl;
 pub mod qido;
+pub mod stgcmt;
 pub mod stow;
 pub mod wado;
 

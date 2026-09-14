@@ -1,5 +1,6 @@
 use crate::api::mwl::MwlService;
 use crate::api::qido::QidoService;
+use crate::api::stgcmt::StgcmtService;
 use crate::api::stow::StowService;
 use crate::api::wado::WadoService;
 use crate::config::BackendConfig;
@@ -20,6 +21,7 @@ pub struct ServiceProvider {
 	pub wado: Option<Box<dyn WadoService>>,
 	pub stow: Option<Box<dyn StowService>>,
 	pub mwl: Option<Box<dyn MwlService>>,
+	pub stgcmt: Option<Box<dyn StgcmtService>>,
 }
 
 impl<S> FromRequestParts<S> for ServiceProvider
@@ -53,6 +55,7 @@ where
 			BackendConfig::Dimse { .. } => {
 				use crate::backend::dimse::mwl::DimseMwlService;
 				use crate::backend::dimse::qido::DimseQidoService;
+				use crate::backend::dimse::stgcmt::DimseStgcmtService;
 				use crate::backend::dimse::stow::DimseStowService;
 				use crate::backend::dimse::wado::DimseWadoService;
 
@@ -77,6 +80,11 @@ where
 						pool.to_owned(),
 						Duration::from_millis(ae_config.mwl.timeout),
 					))),
+					stgcmt: Some(Box::new(DimseStgcmtService::new(
+						pool.to_owned(),
+						Duration::from_millis(ae_config.stgcmt.timeout),
+						state.stgcmt_store,
+					))),
 				}
 			}
 			#[cfg(feature = "s3")]
@@ -88,6 +96,7 @@ where
 					wado: Some(Box::new(S3WadoService::new(&config))),
 					stow: None,
 					mwl: None,
+					stgcmt: None,
 				}
 			}
 		};

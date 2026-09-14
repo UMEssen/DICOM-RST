@@ -31,6 +31,8 @@ pub struct ApplicationEntityConfig {
 	pub stow: StowConfig,
 	#[serde(default, rename = "mwl-rs")]
 	pub mwl: MwlConfig,
+	#[serde(default, rename = "stgcmt-rs")]
+	pub stgcmt: StgcmtConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -190,6 +192,20 @@ pub struct MwlConfig {
 }
 
 impl Default for MwlConfig {
+	fn default() -> Self {
+		Self { timeout: 30_000 }
+	}
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct StgcmtConfig {
+	/// Timeout for the N-ACTION-RQ/RSP round trip. The actual commitment result is delivered
+	/// later, out-of-band, as an N-EVENT-REPORT-RQ, and is not subject to this timeout.
+	pub timeout: u64,
+}
+
+impl Default for StgcmtConfig {
 	fn default() -> Self {
 		Self { timeout: 30_000 }
 	}

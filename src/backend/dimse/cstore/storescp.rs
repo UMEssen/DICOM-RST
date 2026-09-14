@@ -5,7 +5,11 @@ use crate::backend::dimse::cmove::{
 use crate::backend::dimse::cstore::{
 	CompositeStoreResponse, COMMAND_FIELD_COMPOSITE_STORE_REQUEST,
 };
-use crate::backend::dimse::{DicomMessageReader, DicomMessageWriter};
+use crate::backend::dimse::stgcmt::store::StorageCommitmentStore;
+use crate::backend::dimse::stgcmt::{
+	EventReportRequest, EventReportResponse, COMMAND_FIELD_N_EVENT_REPORT_REQUEST,
+};
+use crate::backend::dimse::{DicomMessage, DicomMessageReader, DicomMessageWriter};
 use crate::config::DimseServerConfig;
 use crate::types::{AE, UI, US};
 use anyhow::Context;
@@ -27,15 +31,22 @@ pub struct StoreServiceClassProvider {
 struct InnerStoreServiceClassProvider {
 	mediator: MoveMediator,
 	subscribers: Vec<AE>,
+	stgcmt_store: StorageCommitmentStore,
 	config: DimseServerConfig,
 }
 
 impl StoreServiceClassProvider {
-	pub fn new(mediator: MoveMediator, subscribers: Vec<AE>, config: DimseServerConfig) -> Self {
+	pub fn new(
+		mediator: MoveMediator,
+		subscribers: Vec<AE>,
+		stgcmt_store: StorageCommitmentStore,
+		config: DimseServerConfig,
+	) -> Self {
 		Self {
 			inner: Arc::new(InnerStoreServiceClassProvider {
 				mediator,
 				subscribers,
+				stgcmt_store,
 				config,
 			}),
 		}
@@ -112,9 +123,14 @@ impl StoreServiceClassProvider {
 				.and_then(Result::ok)
 				.context("Missing tag COMMAND_FIELD (0000,0100)")?;
 
+			if command_field == COMMAND_FIELD_N_EVENT_REPORT_REQUEST {
+				Self::handle_event_report(&association, message, &inner).await?;
+				continue;
+			}
+
 			if command_field != COMMAND_FIELD_COMPOSITE_STORE_REQUEST {
 				return Err(anyhow::Error::msg(
-					"Unexpected Command Field. Only C-STORE-RQ is supported.",
+					"Unexpected Command Field. Only C-STORE-RQ and N-EVENT-REPORT-RQ are supported.",
 				));
 			}
 
@@ -189,6 +205,40 @@ impl StoreServiceClassProvider {
 				}
 			}
 		}
+		Ok(())
+	}
+
+	/// Handles an inbound N-EVENT-REPORT-RQ, which reports the (asynchronous) result of a
+	/// previously sent Storage Commitment N-ACTION-RQ.
+	/// See [`crate::backend::dimse::stgcmt::scu::StorageCommitmentServiceClassUser`].
+	async fn handle_event_report(
+		association: &ServerAssociation,
+		message: DicomMessage,
+		inner: &InnerStoreServiceClassProvider,
+	) -> anyhow::Result<()> {
+		let presentation_context_id = message.presentation_context_id;
+		let request = EventReportRequest::try_from(message)?;
+
+		info!(
+			transaction_uid = request.transaction_uid,
+			event_type_id = request.event_type_id,
+			successes = request.result.referenced_sequence.len(),
+			failures = request.result.failed_sequence.len(),
+			"Received N-EVENT-REPORT-RQ"
+		);
+
+		inner
+			.stgcmt_store
+			.complete(request.transaction_uid, request.result);
+
+		let response = EventReportResponse {
+			message_id: request.message_id,
+		};
+
+		association
+			.write_message(response, presentation_context_id, Duration::from_secs(10))
+			.await?;
+
 		Ok(())
 	}
 }

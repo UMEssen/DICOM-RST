@@ -1,11 +1,11 @@
-use anyhow::{bail, Context};
+use anyhow::Context;
 use dicom_web::DicomWebClient;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
-use testcontainers::core::{IntoContainerPort, WaitFor};
+use testcontainers::core::{Host, IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
-use testcontainers::{ContainerAsync, GenericImage};
+use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdout, Command};
 
@@ -14,6 +14,9 @@ pub async fn spawn_orthanc() -> anyhow::Result<ContainerAsync<GenericImage>> {
 		.with_exposed_port(4242.tcp())
 		.with_exposed_port(8042.tcp())
 		.with_wait_for(WaitFor::message_on_stderr("Orthanc has started"))
+		// Allows the Orthanc container to dial back into a DICOM-RST process running on the
+		// test host, e.g. to deliver a Storage Commitment N-EVENT-REPORT-RQ.
+		.with_host("host.docker.internal", Host::HostGateway)
 		.start()
 		.await
 		.context("failed to start Orthanc container")
@@ -21,7 +24,9 @@ pub async fn spawn_orthanc() -> anyhow::Result<ContainerAsync<GenericImage>> {
 
 pub async fn spawn_dicomrst(config: &str) -> anyhow::Result<ServerProcess> {
 	let mut server = ServerProcess::spawn(config)?;
-	server.http_port = server.wait_until_started().await?;
+	let (http_port, dimse_port) = server.wait_until_started().await?;
+	server.http_port = http_port;
+	server.dimse_port = dimse_port;
 	Ok(server)
 }
 
@@ -29,7 +34,8 @@ pub struct ServerProcess {
 	child: Child,
 	stdout: Lines<BufReader<ChildStdout>>,
 	workdir: PathBuf,
-	http_port: u16,
+	pub http_port: u16,
+	pub dimse_port: u16,
 }
 
 impl ServerProcess {
@@ -53,36 +59,41 @@ impl ServerProcess {
 			stdout,
 			workdir,
 			http_port: 0,
+			dimse_port: 0,
 		})
 	}
 
-	async fn wait_until_started(&mut self) -> anyhow::Result<u16> {
+	fn parse_port(line: &str) -> anyhow::Result<u16> {
+		line.split_whitespace()
+			.find_map(|part| part.strip_prefix("server.port="))
+			.ok_or_else(|| anyhow::Error::msg("Log line did not contain server.port="))?
+			.parse::<u16>()
+			.context("Failed to parse server.port as u16")
+	}
+
+	/// Waits until DICOM-RST has logged both its HTTP and DIMSE listener ports, returning
+	/// `(http_port, dimse_port)`.
+	async fn wait_until_started(&mut self) -> anyhow::Result<(u16, u16)> {
 		tokio::time::timeout(Duration::from_secs(15), async {
-			while let Some(line) = self
-				.stdout
-				.next_line()
-				.await
-				.context("Failed to read DICOM-RST stdout")?
-			{
-				if !line.contains("Started DICOMweb server") {
-					continue;
+			let mut http_port = None;
+			let mut dimse_port = None;
+
+			while http_port.is_none() || dimse_port.is_none() {
+				let line = self
+					.stdout
+					.next_line()
+					.await
+					.context("Failed to read DICOM-RST stdout")?
+					.context("DICOM-RST exited before becoming ready")?;
+
+				if line.contains("Started DICOMweb server") {
+					http_port = Some(Self::parse_port(&line)?);
+				} else if line.contains("Started Store Service Class Provider") {
+					dimse_port = Some(Self::parse_port(&line)?);
 				}
-
-				let port = line
-					.split_whitespace()
-					.find_map(|part| part.strip_prefix("server.port="))
-					.ok_or_else(|| {
-						anyhow::Error::msg(
-							"DICOM-RST started, but stdout did not contain server.port=",
-						)
-					})?
-					.parse::<u16>()
-					.context("Failed to parse DICOM-RST server.port as u16")?;
-
-				return Ok(port);
 			}
 
-			bail!("DICOM-RST exited before becoming ready");
+			Ok((http_port.unwrap(), dimse_port.unwrap()))
 		})
 		.await
 		.context("Timed out waiting for DICOM-RST to start")?

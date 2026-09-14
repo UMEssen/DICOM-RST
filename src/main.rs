@@ -9,6 +9,7 @@ pub(crate) mod utils;
 
 use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::MoveMediator;
+use crate::backend::dimse::stgcmt::store::StorageCommitmentStore;
 use crate::backend::dimse::StoreServiceClassProvider;
 use crate::config::{AppConfig, HttpServerConfig};
 use crate::types::AE;
@@ -64,6 +65,7 @@ pub struct AppState {
 	pub config: AppConfig,
 	pub pools: AssociationPools,
 	pub mediator: MoveMediator,
+	pub stgcmt_store: StorageCommitmentStore,
 }
 
 fn init_sentry(config: &AppConfig) -> sentry::ClientInitGuard {
@@ -107,15 +109,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let mediator = MoveMediator::new(&config);
 	let pools = AssociationPools::new(&config);
+	let stgcmt_store = StorageCommitmentStore::new();
 
 	let app_state = AppState {
 		config: config.clone(),
 		mediator: mediator.clone(),
 		pools,
+		stgcmt_store: stgcmt_store.clone(),
 	};
 
 	for dimse_config in config.server.dimse {
 		let mediator = mediator.clone();
+		let stgcmt_store = stgcmt_store.clone();
 		let subscribers: Vec<AE> = config
 			.aets
 			.iter()
@@ -125,7 +130,8 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 			.collect();
 
 		tokio::spawn(async move {
-			let storescp = StoreServiceClassProvider::new(mediator, subscribers, dimse_config);
+			let storescp =
+				StoreServiceClassProvider::new(mediator, subscribers, stgcmt_store, dimse_config);
 			if let Err(err) = storescp.spawn().await {
 				error!("Failed to spawn STORE-SCP thread: {err}");
 				// Unrecoverable error - exit the process

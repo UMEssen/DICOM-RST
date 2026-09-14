@@ -63,6 +63,7 @@ aws-credential-types = { version = "1.2.13", optional = true }
 testcontainers = "0.27.3"
 dicom-test-files = "0.4.0"
 dicom-web = "0.5.0"
+reqwest = { version = "0.13.2", default-features = false, features = ["json"] }
 
 [lints.rust]
 unsafe_code = "forbid"
