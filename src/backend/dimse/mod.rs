@@ -6,7 +6,6 @@
 //! - MWL-RS is implemented as a find service class user (C-FIND service).
 //!
 
-mod cecho;
 mod cfind;
 pub mod cmove;
 mod cstore;
@@ -19,7 +18,6 @@ pub mod wado;
 
 use crate::types::{UI, US};
 use association::{Association, AssociationError};
-pub use cecho::EchoServiceClassUser;
 pub use cstore::storescp::StoreServiceClassProvider;
 use dicom::dictionary_std::tags;
 use dicom::encoding::TransferSyntaxIndex;

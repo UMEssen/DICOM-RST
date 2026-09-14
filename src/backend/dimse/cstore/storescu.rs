@@ -23,7 +23,7 @@ impl StoreServiceClassUser {
 
 	#[allow(clippy::significant_drop_tightening)]
 	pub async fn store(&self, file: FileDicomObject<InMemDicomObject>) -> Result<(), StoreError> {
-		let association = self
+		let mut association = self
 			.pool
 			.get(PresentationParameter {
 				abstract_syntax_uid: UI::from(file.meta().media_storage_sop_class_uid().to_owned()),
@@ -41,12 +41,12 @@ impl StoreServiceClassUser {
 			data_set: file.into_inner(),
 		};
 
-		association
-			.write_message(request, None, self.timeout)
-			.await?;
+		let written = association.write_message(request, None, self.timeout).await;
+		association.discard_on_err(written)?;
 		trace!("Sent C-STORE-RQ");
 
-		association.read_message(self.timeout).await?;
+		let read = association.read_message(self.timeout).await;
+		association.discard_on_err(read)?;
 		trace!("Received C-STORE-RSP");
 
 		Ok(())

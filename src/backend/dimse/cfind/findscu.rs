@@ -70,13 +70,15 @@ impl FindServiceClassUser {
 		};
 
 		try_stream! {
-			let association = self.pool.get(presentation).await?;
+			let mut association = self.pool.get(presentation).await?;
 			let request = CompositeFindRequest::from(options);
-			association.write_message(request, None, self.timeout).await?;
+			let written = association.write_message(request, None, self.timeout).await;
+			association.discard_on_err(written)?;
 			trace!("Sent C-FIND-RQ");
 
 			loop {
-				let response = association.read_message(self.timeout).await?;
+				let read = association.read_message(self.timeout).await;
+				let response = association.discard_on_err(read)?;
 				let response = CompositeFindResponse::try_from(response)?;
 				trace!("Received C-FIND-RSP");
 

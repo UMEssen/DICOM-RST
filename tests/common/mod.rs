@@ -87,6 +87,18 @@ impl ServerProcess {
 		.await
 		.context("Timed out waiting for DICOM-RST to start")?
 	}
+
+	/// Collects log lines from the server's stdout until no new line arrives within
+	/// `quiet_period`.
+	pub async fn collect_logs(&mut self, quiet_period: Duration) -> Vec<String> {
+		let mut lines = Vec::new();
+		while let Ok(Ok(Some(line))) =
+			tokio::time::timeout(quiet_period, self.stdout.next_line()).await
+		{
+			lines.push(line);
+		}
+		lines
+	}
 }
 
 impl Drop for ServerProcess {
@@ -100,6 +112,15 @@ pub async fn with_test_environment(
 	config: &str,
 	test: impl AsyncFnOnce(DicomWebClient) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
+	with_test_server(config, async |client, _server| test(client).await).await
+}
+
+/// Like [`with_test_environment`], but also provides access to the DICOM-RST server process,
+/// e.g. to inspect its log output.
+pub async fn with_test_server(
+	config: &str,
+	test: impl AsyncFnOnce(DicomWebClient, &mut ServerProcess) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
 	let orthanc = spawn_orthanc().await?;
 	let orthanc_port = orthanc
 		.get_host_port_ipv4(4242.tcp())
@@ -107,13 +128,13 @@ pub async fn with_test_environment(
 		.context("failed to get mapped Orthanc DIMSE port")?;
 
 	let config = config.replace("${ORTHANC_PORT}", &orthanc_port.to_string());
-	let server = spawn_dicomrst(&config).await?;
+	let mut server = spawn_dicomrst(&config).await?;
 
 	let client = DicomWebClient::with_single_url(&format!(
 		"http://localhost:{}/aets/ORTHANC",
 		server.http_port
 	));
-	test(client).await?;
+	test(client, &mut server).await?;
 
 	Ok(())
 }

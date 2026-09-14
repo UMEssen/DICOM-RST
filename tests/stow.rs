@@ -171,3 +171,62 @@ async fn returns_413_if_max_upload_size_is_exceeded() -> anyhow::Result<()> {
 	})
 	.await
 }
+
+// Associations must be reused for subsequent instances instead of being rebuilt for every
+// single instance. Validating a pooled association must not require a DIMSE round trip, as
+// the association only negotiates a presentation context for the storage SOP class of the
+// instance, so a C-ECHO-RQ would be rejected by strict service class providers.
+#[tokio::test]
+async fn reuses_associations_for_multiple_instances() -> anyhow::Result<()> {
+	let config = "
+        server:
+          http:
+            port: 0
+          dimse:
+            - aet: DICOM-RST
+              interface: 0.0.0.0
+              port: 0
+        aets:
+          - aet: ORTHANC
+            host: 127.0.0.1
+            port: ${ORTHANC_PORT}
+            backend: DIMSE
+    ";
+
+	// All instances share the same SOP class and transfer syntax, so a single association is
+	// sufficient to store all of them.
+	let instances = ["pydicom/CT_small.dcm"; 3]
+		.map(|path| open_file(dicom_test_files::path(path).unwrap()).unwrap());
+
+	with_test_server(config, async |client, server| {
+		let response = client
+			.store_instances()
+			.with_instances(futures::stream::iter(instances))
+			.run()
+			.await
+			.context("STOW-RS request failed")?;
+
+		let referenced_sop_sequence = response
+			.element(tags::REFERENCED_SOP_SEQUENCE)
+			.context("STOW-RS response is missing ReferencedSOPSequence")?;
+		assert!(
+			referenced_sop_sequence
+				.items()
+				.is_some_and(|items| items.len() == 3),
+			"All three instances should appear in ReferencedSOPSequence"
+		);
+
+		let logs = server.collect_logs(Duration::from_secs(1)).await;
+		let created = logs
+			.iter()
+			.filter(|line| line.contains("Created new client association"))
+			.count();
+		assert_eq!(
+			created, 1,
+			"Expected a single association for all instances, but {created} were created"
+		);
+
+		Ok(())
+	})
+	.await
+}

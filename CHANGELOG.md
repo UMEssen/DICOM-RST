@@ -11,7 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Fixed
 
+- Associations are now reused for subsequent requests when talking to strict service class
+  providers. Pooled associations were validated with a C-ECHO-RQ, but an association only
+  negotiates a presentation context for the abstract syntax of the actual request, so providers
+  that reject a C-ECHO-RQ on such a presentation context forced a new association for every
+  single request (e.g. for every instance of a STOW-RS request).
+- Associations are no longer returned to the pool after a failed or partially completed message
+  exchange, as their state is unknown.
+
 ## Changed
+
+- Idle associations are now validated by checking the socket state instead of exchanging a
+  C-ECHO, saving one round trip per pooled request.
 
 ## [0.3.0] - 2026-08-13
 

@@ -25,7 +25,7 @@ impl MoveServiceClassUser {
 	#[instrument(skip_all, name = "MOVE-SCU")]
 	#[allow(clippy::significant_drop_tightening)]
 	pub async fn invoke(&self, request: CompositeMoveRequest) -> Result<(), MoveError> {
-		let association = self
+		let mut association = self
 			.pool
 			.get(PresentationParameter {
 				abstract_syntax_uid: UI::from(
@@ -35,13 +35,13 @@ impl MoveServiceClassUser {
 			})
 			.await?;
 
-		association
-			.write_message(request, None, self.timeout)
-			.await?;
+		let written = association.write_message(request, None, self.timeout).await;
+		association.discard_on_err(written)?;
 		trace!("Sent C-MOVE-RQ");
 
 		loop {
-			let response = association.read_message(self.timeout).await?;
+			let read = association.read_message(self.timeout).await;
+			let response = association.discard_on_err(read)?;
 			trace!("Received C-MOVE-RSP");
 
 			let status_type = response

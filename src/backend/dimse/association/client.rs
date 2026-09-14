@@ -160,6 +160,46 @@ impl ClientAssociation {
 	pub const fn uuid(&self) -> &Uuid {
 		&self.uuid
 	}
+
+	/// Cheap liveness check for pooled associations.
+	///
+	/// This replaces the previous C-ECHO based check. A C-ECHO carries
+	/// `AffectedSOPClassUID = Verification (1.2.840.10008.1.1)`, but the only presentation
+	/// context negotiated for this association is the one of the actual request
+	/// (e.g. Study Root Query/Retrieve FIND). Sending the C-ECHO over that context violates
+	/// PS3.7. Lenient SCPs answer anyway, stricter ones reject it with a non-successful
+	/// status or silently drop it, which made recycling fail for every request and added the
+	/// full C-ECHO timeout on top.
+	///
+	/// The socket state is sufficient to detect a dead peer:
+	/// - `Ok(_)`: either EOF (peer closed) or unread data from a previous message,
+	///   meaning the association is out of sync. Both are unusable.
+	/// - `WouldBlock`: nothing pending, connection still open.
+	///
+	/// A peer that died without closing the connection is detected by the next DIMSE
+	/// operation, which fails and causes a new association to be established.
+	///
+	/// Note: `O_NONBLOCK` is a property of the open file description and is therefore shared
+	/// with the `TcpStream` owned by the association thread. This is safe here because the
+	/// caller holds the association exclusively, no command is in flight, and the blocking
+	/// mode is restored before returning.
+	pub fn is_alive(&self) -> bool {
+		if self.channel.is_closed() {
+			return false;
+		}
+
+		if self.tcp_stream.set_nonblocking(true).is_err() {
+			return false;
+		}
+
+		let mut buf = [0u8; 1];
+		let alive = match self.tcp_stream.peek(&mut buf) {
+			Ok(_) => false,
+			Err(err) => err.kind() == std::io::ErrorKind::WouldBlock,
+		};
+
+		self.tcp_stream.set_nonblocking(false).is_ok() && alive
+	}
 }
 
 impl Drop for ClientAssociation {

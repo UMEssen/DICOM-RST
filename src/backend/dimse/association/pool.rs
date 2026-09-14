@@ -1,5 +1,4 @@
 use crate::backend::dimse::association;
-use crate::backend::dimse::EchoServiceClassUser;
 use crate::config::{AppConfig, BackendConfig};
 use crate::types::UI;
 use association::client::{ClientAssociation, ClientAssociationOptions};
@@ -130,11 +129,37 @@ pub struct Object<M: Manager> {
 	permit: OwnedSemaphorePermit,
 }
 
+impl<M: Manager> Object<M> {
+	/// Drops the underlying object instead of returning it to the pool.
+	///
+	/// Must be called if the object is left in an unknown state, e.g. after a failed or
+	/// partially completed message exchange. A liveness check cannot detect this: a message
+	/// that was only partially written leaves the socket quiet, so the association looks
+	/// reusable while the peer is still waiting for the rest of it.
+	///
+	/// Dereferencing the object after discarding it panics.
+	pub fn discard(&mut self) {
+		self.inner = None;
+	}
+
+	/// Discards this object if `result` is an error, then returns `result` unchanged.
+	pub fn discard_on_err<T, E>(&mut self, result: Result<T, E>) -> Result<T, E> {
+		if result.is_err() {
+			self.discard();
+		}
+		result
+	}
+}
+
 impl<M: Manager> Deref for Object<M> {
 	type Target = M::Object;
 
 	fn deref(&self) -> &Self::Target {
-		&self.inner.as_ref().unwrap().object
+		&self
+			.inner
+			.as_ref()
+			.expect("Object should not be dereferenced after being discarded")
+			.object
 	}
 }
 
@@ -232,11 +257,9 @@ impl Manager for AssociationManager {
 		association
 	}
 
+	#[allow(clippy::unused_async)] // required by the Manager trait
 	async fn recycle(&self, association: &Self::Object) -> Result<(), String> {
-		let successful = EchoServiceClassUser::new(association)
-			.echo(Duration::from_secs(5))
-			.await
-			.map_err(|err| format!("Failed to recycle association: {err}"))?;
+		let successful = association.is_alive();
 
 		if successful {
 			info!(
@@ -249,7 +272,7 @@ impl Manager for AssociationManager {
 				backend_uuid = association.uuid().to_string(),
 				"Recycling failed"
 			);
-			Err(String::from("C-ECHO returned non-successful status code"))
+			Err(String::from("Association is no longer usable"))
 		}
 	}
 }
