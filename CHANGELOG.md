@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single request (e.g. for every instance of a STOW-RS request).
 - Associations are no longer returned to the pool after a failed or partially completed message
   exchange, as their state is unknown.
+- Fix incorrect transfer syntax recorded in file meta when multiple presentation contexts were negotiated in STORE-SCP.
 
 ## Changed
 
