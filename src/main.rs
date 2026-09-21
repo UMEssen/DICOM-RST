@@ -31,6 +31,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// The implementation class UID for DICOM-RST.
 /// The UID is a randomly generated UUID represented as a single integer value under the 2.25 root.
 pub const IMPLEMENTATION_CLASS_UID: &str = "2.25.94508551356620097453554517680708411706";

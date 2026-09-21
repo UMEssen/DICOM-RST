@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional `mimalloc` feature that uses mimalloc as the global allocator. Enabled by default in the Docker images to reduce memory growth in long-running deployments (#68)
+
 ### Fixed
 
 ### Changed
