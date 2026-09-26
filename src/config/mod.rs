@@ -491,10 +491,14 @@ impl TryFrom<RawAuditConfig> for AuditConfig {
 
 /// Headers whose values are secrets: recording them would put credentials
 /// into the audit log.
-const CREDENTIAL_HEADERS: [HeaderName; 3] = [
+/// Headers that carry credentials and must never become an audit field. A
+/// best-effort guard against an obvious misconfiguration, not an exhaustive
+/// list: `X-Forwarded-Access-Token` is the one oauth2-proxy sets itself.
+const CREDENTIAL_HEADERS: [HeaderName; 4] = [
 	header::AUTHORIZATION,
 	header::PROXY_AUTHORIZATION,
 	header::COOKIE,
+	HeaderName::from_static("x-forwarded-access-token"),
 ];
 
 fn parse_header_name(
@@ -586,7 +590,12 @@ mod tests {
 	#[test]
 	fn credential_headers_are_a_load_error() {
 		for key in ["user-header", "subject-header", "on-behalf-of-header"] {
-			for name in ["Authorization", "proxy-authorization", "COOKIE"] {
+			for name in [
+				"Authorization",
+				"proxy-authorization",
+				"COOKIE",
+				"X-Forwarded-Access-Token",
+			] {
 				let yaml = format!("telemetry:\n  level: INFO\n  audit:\n    {key}: {name}\n");
 				let error = load(&yaml).expect_err("credential header must be rejected");
 				assert!(
