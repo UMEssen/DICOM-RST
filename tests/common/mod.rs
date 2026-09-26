@@ -88,6 +88,11 @@ impl ServerProcess {
 		.context("Timed out waiting for DICOM-RST to start")?
 	}
 
+	/// The port the HTTP server is listening on.
+	pub const fn http_port(&self) -> u16 {
+		self.http_port
+	}
+
 	/// Collects log lines from the server's stdout until no new line arrives within
 	/// `quiet_period`.
 	pub async fn collect_logs(&mut self, quiet_period: Duration) -> Vec<String> {
@@ -132,7 +137,7 @@ pub async fn with_test_server(
 
 	let client = DicomWebClient::with_single_url(&format!(
 		"http://localhost:{}/aets/ORTHANC",
-		server.http_port
+		server.http_port()
 	));
 	test(client, &mut server).await?;
 

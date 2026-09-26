@@ -1,6 +1,7 @@
 #![allow(clippy::multiple_crate_versions)]
 
 pub(crate) mod api;
+pub(crate) mod audit;
 pub(crate) mod backend;
 pub(crate) mod config;
 pub(crate) mod rendering;
@@ -17,6 +18,8 @@ use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::ServiceExt;
+use std::ffi::OsStr;
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -27,6 +30,7 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace;
 use tracing::{error, info, level_filters::LevelFilter, Level};
+use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -45,14 +49,32 @@ pub const IMPLEMENTATION_VERSION_NAME: &str = concat!("DICOM-RST ", env!("CARGO_
 
 pub const DEFAULT_AET: &str = "DICOM-RST";
 
-fn init_logger(level: tracing::Level) {
+/// How long to wait after shutdown for buffered audit records to be written.
+const AUDIT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn init_logger(level: tracing::Level, escape_line_breaks: bool) {
+	// With auditing on, the log shares stdout with the audit records, so a
+	// message must never span lines (see `audit::LineSafeStdout`). Otherwise
+	// the default writer, i.e. unchanged output.
+	let writer = if escape_line_breaks {
+		BoxMakeWriter::new(audit::LineSafeStdout)
+	} else {
+		BoxMakeWriter::new(std::io::stdout)
+	};
 	tracing_subscriber::registry()
 		.with(
 			tracing_subscriber::fmt::layer()
 				.compact()
+				// ANSI escapes belong on terminals, not in collected pod
+				// logs (they garble downstream log pipelines).
+				.with_ansi(use_ansi(
+					std::io::stdout().is_terminal(),
+					std::env::var_os("NO_COLOR").as_deref(),
+				))
 				.with_file(false)
 				.with_line_number(false)
-				.with_target(false),
+				.with_target(false)
+				.with_writer(writer),
 		)
 		.with(
 			EnvFilter::builder()
@@ -61,6 +83,13 @@ fn init_logger(level: tracing::Level) {
 		)
 		.with(sentry::integrations::tracing::layer())
 		.init();
+}
+
+/// ANSI colors only on a terminal, and not when `NO_COLOR` is set to a
+/// non-empty value (<https://no-color.org>), which tracing-subscriber would
+/// otherwise honour by default.
+fn use_ansi(stdout_is_terminal: bool, no_color: Option<&OsStr>) -> bool {
+	stdout_is_terminal && no_color.is_none_or(OsStr::is_empty)
 }
 
 #[derive(Clone)]
@@ -90,25 +119,36 @@ fn init_sentry(config: &AppConfig) -> sentry::ClientInitGuard {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let config = AppConfig::new()?;
-	init_logger(config.telemetry.level);
+	init_logger(config.telemetry.level, config.telemetry.audit.enabled);
 
 	// Manually create the Tokio runtime because the Sentry client needs to be created *before* the
 	// Tokio runtime, which prevents us from using the #[tokio::main] macro.
 	// See https://docs.sentry.io/platforms/rust/#async-main-function
 	let _sentry = init_sentry(&config);
 
+	// The audit writer is a plain thread, independent of the runtime.
+	let (audit_sink, audit_writer) = audit::start(&config.telemetry.audit)?.unzip();
+
 	tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
 		.build()?
 		.block_on(async move {
-			if let Err(error) = run(config).await {
+			if let Err(error) = run(config, audit_sink).await {
 				error!("Failed to start application due to error: {error}");
 			}
 		});
+
+	// The runtime and with it every audit sink are gone: let the writer
+	// drain what is still buffered.
+	if let Some(writer) = audit_writer {
+		if !writer.finish(AUDIT_FLUSH_TIMEOUT) {
+			error!("Audit log writer did not finish; buffered audit records may be lost");
+		}
+	}
 	Ok(())
 }
 
-async fn run(config: AppConfig) -> anyhow::Result<()> {
+async fn run(config: AppConfig, audit_sink: Option<audit::AuditSink>) -> anyhow::Result<()> {
 	let mediator = MoveMediator::new(&config);
 	let pools = AssociationPools::new(&config);
 
@@ -151,8 +191,17 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		.layer(TimeoutLayer::with_status_code(
 			StatusCode::REQUEST_TIMEOUT,
 			Duration::from_secs(config.server.http.request_timeout),
-		))
-		.with_state(app_state);
+		));
+	// Outside the timeout layer, so timed-out requests are audited with
+	// their 408 as well. Not installed at all unless telemetry.audit.enabled.
+	let app = match audit_sink {
+		Some(sink) => app.layer(axum::middleware::from_fn_with_state(
+			sink,
+			audit::middleware,
+		)),
+		None => app,
+	}
+	.with_state(app_state);
 
 	let app = NormalizePathLayer::trim_trailing_slash().layer(app);
 	let service = ServiceExt::<Request>::into_make_service(app);
@@ -210,4 +259,18 @@ async fn add_common_headers(req: Request, next: axum::middleware::Next) -> Respo
 	let headers = response.headers_mut();
 	headers.insert("Server", axum::http::HeaderValue::from_static(server_name));
 	response
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn ansi_only_on_a_terminal_without_no_color() {
+		assert!(use_ansi(true, None));
+		assert!(use_ansi(true, Some(OsStr::new(""))));
+		assert!(!use_ansi(true, Some(OsStr::new("1"))));
+		assert!(!use_ansi(false, None));
+		assert!(!use_ansi(false, Some(OsStr::new("1"))));
+	}
 }

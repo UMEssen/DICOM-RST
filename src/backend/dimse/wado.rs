@@ -125,8 +125,9 @@ impl DimseWadoService {
 		mediator: MoveMediator,
 		timeout: Duration,
 		config: WadoConfig,
+		log_study_uid: bool,
 	) -> Self {
-		let movescu = MoveServiceClassUser::new(pool, timeout);
+		let movescu = MoveServiceClassUser::new(pool, timeout, log_study_uid);
 		Self {
 			movescu: Arc::new(movescu),
 			mediator,

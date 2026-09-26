@@ -81,6 +81,8 @@ aets:
 telemetry:
   sentry: https://sentry.local/dsn
   level: INFO
+  audit:
+    enabled: false
 ```
 
 <deflist>
@@ -98,7 +100,176 @@ telemetry:
           <li>TRACE</li>
         </list>
     </def>
+    <def title="telemetry.audit" id="telemetry.audit">
+        Structured access-audit logging, disabled by default.
+        See <a href="#access-audit-config">Access Audit Config</a>.
+    </def>
 </deflist>
+
+## Access Audit Config {id="access-audit-config"}
+
+%product% performs no authentication itself. When it runs behind an authenticating reverse proxy, it can write one
+access-audit record per HTTP request, naming the user the proxy verified and the DICOM resources that were accessed.
+Read the <a href="#audit-trust-model">trust model</a> before relying on the identity fields.
+All settings are optional; with <code>enabled: false</code> (the default) nothing changes.
+
+```yaml
+telemetry:
+  audit:
+    enabled: true
+    user-header: X-Forwarded-Email
+    subject-header: X-Forwarded-User
+    trusted-relays: []
+    on-behalf-of-header: X-On-Behalf-Of
+```
+
+<deflist>
+    <def title="telemetry.audit.enabled" id="telemetry.audit.enabled">
+        Enables the access-audit log (default <code>false</code>).
+        Every HTTP request then emits one self-contained JSON line on stdout.
+        Delivery is fail-open: records pass through a bounded buffer to a dedicated writer thread, so a slow log
+        consumer never blocks requests. When the buffer is full, records are dropped and counted; a warning with the
+        running count is logged for the first drop and then for every 100th.
+        On a graceful shutdown (<code>server.http.graceful-shutdown</code>, enabled by default) %product% waits up to
+        5 seconds for buffered records to be written. Without a graceful shutdown, buffered records are lost.
+    </def>
+    <def title="telemetry.audit.user-header" id="telemetry.audit.user-header">
+        The request header carrying the user verified by the proxy, recorded as <code>user</code>
+        (default <code>X-Forwarded-Email</code>).
+        This is also the identity that <code>trusted-relays</code> is matched against.
+    </def>
+    <def title="telemetry.audit.subject-header" id="telemetry.audit.subject-header">
+        The request header carrying the subject identifier verified by the proxy, recorded as <code>subject</code>
+        (default <code>X-Forwarded-User</code>).
+    </def>
+    <def title="telemetry.audit.trusted-relays" id="telemetry.audit.trusted-relays">
+        Identities, exactly as the proxy asserts them in <code>user-header</code>, that may name the end user they act
+        for (default: empty, nobody may).
+        Use this for services that call %product% with their own credentials on behalf of a signed-in user.
+        Matching is ASCII case-insensitive. Empty entries are rejected at startup.
+    </def>
+    <def title="telemetry.audit.on-behalf-of-header" id="telemetry.audit.on-behalf-of-header">
+        The request header in which a trusted relay names the end user (default <code>X-On-Behalf-Of</code>).
+        It is only read when <code>trusted-relays</code> is not empty, and must differ from
+        <code>user-header</code> and <code>subject-header</code>.
+    </def>
+</deflist>
+
+Header names are validated when the configuration is loaded; an invalid name, or a header that carries credentials
+(<code>Authorization</code>, <code>Proxy-Authorization</code>, <code>Cookie</code>,
+<code>X-Forwarded-Access-Token</code>), stops %product% at startup with an error naming the offending key. The credential
+check is a guard against an obvious misconfiguration, not an exhaustive list: never point an identity header at a header
+that carries a secret.
+
+### Audit Record
+
+```json
+{"audit":"http-access","ts":"2026-08-17T17:16:55Z","user":"jane.doe@example.org","subject":"3f2c9a4e","source":"192.0.2.10","method":"GET","path":"/aets/PACS/studies/1.2.3.4","aet":"PACS","study":"1.2.3.4","status":200,"duration_ms":4886,"request_id":"0f8c2b7e"}
+```
+
+| Field                   | Description                                                                               |
+|-------------------------|-------------------------------------------------------------------------------------------|
+| `audit`                 | Always `http-access`.                                                                     |
+| `ts`                    | Time the response head was produced (UTC, RFC 3339, second precision).                   |
+| `user`, `subject`       | Values of `user-header` and `subject-header`: 1 to 320 bytes of UTF-8 without control characters. Omitted if absent, sent more than once or malformed (never truncated). |
+| `on_behalf_of`          | The end user named by a trusted relay: a claim, not a verified identity (see below).      |
+| `on_behalf_of_rejected` | Why an on-behalf-of header was ignored: `untrusted-caller` or `invalid`.                  |
+| `source`                | Leftmost entry of `X-Forwarded-For`, at most 64 bytes.                                    |
+| `method`, `path`        | Request method, and path with query string (at most 8 KiB).                               |
+| `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path, at most 256 bytes each. If any path parameter cannot be decoded, all four are omitted; `path` is still recorded. |
+| `status`, `duration_ms` | Status and elapsed time when the response head was produced, including `408` for timed-out requests. |
+| `user_agent`            | `User-Agent` header, at most 512 bytes.                                                   |
+| `request_id`            | `X-Request-Id` header, if sent once with 1 to 128 printable ASCII characters (no spaces). |
+
+Absent values are omitted. Values longer than their limit are cut at a character boundary and end in `…`; the limits
+include the marker.
+With auditing enabled, the log line of a completed C-MOVE also carries the <code>study_uid</code>, and line breaks inside
+a regular log message are escaped (<code>\n</code>, <code>\r</code>): audit records and the regular log share stdout, and a
+message that carries request data (a percent-decoded path segment can contain a newline) must never start a line of its
+own that looks like an audit record. With auditing disabled, the log output is unchanged. The guarantee is about
+<code>\n</code> and <code>\r</code>; a consumer that also splits on Unicode line separators (U+2028, U+2029, U+0085) is not
+covered.
+
+What the record does and does not show:
+
+- `source` and `request_id` are copied from the incoming request. Both are whatever the client sent, unless the
+  proxies in front of %product% overwrite them.
+- `status` and `duration_ms` are taken when the response head is produced. A streamed retrieve that fails after that
+  is still recorded with the status of its head.
+- A client that disconnects before the response head is produced, or a request whose handler panics, can leave no
+  record at all.
+- A record without `user` behind an authenticating proxy means the identity header did not arrive. Alert on such
+  records: besides misconfiguration, a client can make some proxies drop headers they inject by listing them as
+  hop-by-hop headers in `Connection`; the reverse proxy in Go's standard library, for example, removes every header
+  named there. This erases the identity; it cannot replace it with a chosen one.
+
+### Trust Model {id="audit-trust-model"}
+
+The identity fields are only as trustworthy as the deployment around %product%. All of the following must hold:
+
+<warning>
+    <list>
+        <li>The authenticating proxy removes any <code>user-header</code> and <code>subject-header</code> a client
+        sends and sets them itself from the verified session. It must <b>not</b> remove the
+        <code>on-behalf-of-header</code>: a relay is itself a client of the proxy, and removing the header would switch
+        the feature off.</li>
+        <li>Every trusted relay sets the <code>on-behalf-of-header</code> itself, overwriting any existing value, to the
+        end user of its own verified session, and never forwards a copy it received from its own clients. Otherwise any
+        user of the relay can name someone else.</li>
+        <li>%product% is reachable only through the proxy, for example by binding <code>server.http.interface</code> to
+        <code>127.0.0.1</code> next to a sidecar proxy, or with a firewall or network policy. Anyone who can reach the
+        port directly can send any header.</li>
+    </list>
+</warning>
+
+A relay is trusted because of the identity the proxy verified for it, never because of a header it sends itself.
+An on-behalf-of claim is recorded as <code>on_behalf_of</code> only if the request's <code>user</code> is listed in
+<code>trusted-relays</code>, the header occurs exactly once, and its value is 1 to 320 bytes of UTF-8 without
+whitespace or control characters. Otherwise the record carries <code>on_behalf_of_rejected</code>
+(<code>untrusted-caller</code> or <code>invalid</code>) and the claimed value is not logged.
+
+<code>on_behalf_of</code> is an unverifiable claim made by an authenticated relay, recorded next to the relay's own
+identity in <code>user</code>. %product% cannot check it, and it never grants or restricts access.
+
+### Example: oauth2-proxy
+
+In oauth2-proxy v7.15.3 (<code>pkg/middleware/headers.go</code>, <code>pkg/apis/options/legacy_options.go</code>),
+<code>pass_user_headers</code> (enabled by default) removes client-supplied <code>X-Forwarded-User</code>,
+<code>X-Forwarded-Email</code>, <code>X-Forwarded-Groups</code>, <code>X-Forwarded-Preferred-Username</code> and
+<code>X-Forwarded-Access-Token</code> from the request before setting them from the session, which makes the default
+<code>user-header</code> and <code>subject-header</code> suitable. The <code>X-Auth-Request-*</code> headers are response
+headers only: they are neither set on nor removed from the upstream request, so they must not be used as identity
+headers. Verify that the proxy version you run behaves the same.
+
+An oauth2-proxy configuration (excerpt) in front of %product%, accepting both interactive users and services that
+present their own bearer token:
+
+```toml
+provider = "oidc"
+oidc_issuer_url = "https://idp.example.org"
+upstreams = ["http://127.0.0.1:8080/"]
+email_domains = ["*"]
+# Default: sets X-Forwarded-User/-Email from the session, replacing client copies
+pass_user_headers = true
+# Lets services call with a bearer token issued by the same provider
+skip_jwt_bearer_tokens = true
+```
+
+For a service, the proxy fills the identity headers from the claims of its token, so with the default
+<code>user-header</code> the relay's token needs an e-mail claim.
+With the matching %product% configuration, requests from <code>viewer@example.org</code> may name the end user in
+<code>X-On-Behalf-Of</code>:
+
+```yaml
+server:
+  http:
+    interface: 127.0.0.1
+telemetry:
+  audit:
+    enabled: true
+    trusted-relays:
+      - viewer@example.org
+```
 
 ## Global Server Config
 

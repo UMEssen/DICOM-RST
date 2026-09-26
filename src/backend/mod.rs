@@ -68,6 +68,7 @@ where
 						state.mediator,
 						Duration::from_millis(ae_config.wado.timeout),
 						ae_config.wado.clone(),
+						state.config.telemetry.audit.enabled,
 					))),
 					stow: Some(Box::new(DimseStowService::new(
 						pool.to_owned(),
