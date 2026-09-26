@@ -108,9 +108,9 @@ telemetry:
 
 ## Access Audit Config {id="access-audit-config"}
 
-%product% performs no authentication itself. When it runs behind an authenticating reverse proxy such as
-<a href="https://oauth2-proxy.github.io/oauth2-proxy/">oauth2-proxy</a>, it can write one access-audit record per
-HTTP request, naming the user the proxy verified and the DICOM resources that were accessed.
+%product% performs no authentication itself. When it runs behind an authenticating reverse proxy, it can write one
+access-audit record per HTTP request, naming the user the proxy verified and the DICOM resources that were accessed.
+Read the <a href="#audit-trust-model">trust model</a> before relying on the identity fields.
 All settings are optional; with <code>enabled: false</code> (the default) nothing changes.
 
 ```yaml
@@ -128,7 +128,8 @@ telemetry:
         Enables the access-audit log (default <code>false</code>).
         Every HTTP request then emits one self-contained JSON line on stdout.
         Delivery is fail-open: records pass through a bounded buffer to a dedicated writer thread, so a slow log
-        consumer never blocks requests; dropped records are counted and logged as warnings.
+        consumer never blocks requests. When the buffer is full, records are dropped and counted; a warning with the
+        running count is logged for the first drop and then for every 100th.
         On a graceful shutdown (<code>server.http.graceful-shutdown</code>, enabled by default) %product% waits up to
         5 seconds for buffered records to be written. Without a graceful shutdown, buffered records are lost.
     </def>
@@ -167,34 +168,49 @@ error naming the offending key.
 | Field                   | Description                                                                               |
 |-------------------------|-------------------------------------------------------------------------------------------|
 | `audit`                 | Always `http-access`.                                                                     |
-| `ts`                    | Completion time (UTC, RFC 3339, second precision).                                        |
+| `ts`                    | Time the response head was produced (UTC, RFC 3339, second precision).                   |
 | `user`, `subject`       | Values of `user-header` and `subject-header`: 1 to 320 bytes of UTF-8 without control characters. Omitted if absent, sent more than once or malformed (never truncated). |
-| `on_behalf_of`          | The end user named by a trusted relay (see below).                                        |
+| `on_behalf_of`          | The end user named by a trusted relay: a claim, not a verified identity (see below).      |
 | `on_behalf_of_rejected` | Why an on-behalf-of header was ignored: `untrusted-caller` or `invalid`.                  |
-| `source`                | First entry of `X-Forwarded-For`, at most 64 bytes.                                       |
+| `source`                | Leftmost entry of `X-Forwarded-For`, at most 64 bytes.                                    |
 | `method`, `path`        | Request method, and path with query string (at most 8 KiB).                               |
-| `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path.                                     |
-| `status`, `duration_ms` | Response status (including `408` for timed-out requests) and duration.                    |
+| `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path. If any path parameter cannot be decoded, all four are omitted; `path` is still recorded. |
+| `status`, `duration_ms` | Status and elapsed time when the response head was produced, including `408` for timed-out requests. |
 | `user_agent`            | `User-Agent` header, at most 512 bytes.                                                   |
-| `request_id`            | `X-Request-Id` header, if sent once with 1 to 128 visible ASCII characters.               |
+| `request_id`            | `X-Request-Id` header, if sent once with 1 to 128 printable ASCII characters (no spaces). |
 
-Absent values are omitted. Values longer than their limit are cut at a character boundary and end in `…`. With auditing enabled, the log line of a completed C-MOVE also carries the
-<code>study_uid</code>.
+Absent values are omitted. Values longer than their limit are cut at a character boundary and end in `…`.
+With auditing enabled, the log line of a completed C-MOVE also carries the <code>study_uid</code>.
 
-### Trust Model
+What the record does and does not show:
 
-The identity fields are only as trustworthy as the proxy in front of %product%:
+- `source` and `request_id` are copied from the incoming request. Both are whatever the client sent, unless the
+  proxies in front of %product% overwrite them.
+- `status` and `duration_ms` are taken when the response head is produced. A streamed retrieve that fails after that
+  is still recorded with the status of its head.
+- A client that disconnects before the response head is produced, or a request whose handler panics, can leave no
+  record at all.
+- A record without `user` behind an authenticating proxy means the identity header did not arrive. Alert on such
+  records: besides misconfiguration, a client can make some proxies drop headers they inject by listing them as
+  hop-by-hop headers in `Connection`; the reverse proxy in Go's standard library, for example, removes every header
+  named there. This erases the identity; it cannot replace it with a chosen one.
+
+### Trust Model {id="audit-trust-model"}
+
+The identity fields are only as trustworthy as the deployment around %product%. All of the following must hold:
 
 <warning>
     <list>
-        <li>The proxy must remove any <code>user-header</code>, <code>subject-header</code> and
-        <code>on-behalf-of-header</code> a client sends and set the identity headers itself from the verified
-        session. oauth2-proxy does this for <code>X-Forwarded-User</code> and <code>X-Forwarded-Email</code> with
-        <code>pass_user_headers</code> (enabled by default). The <code>X-Auth-Request-*</code> headers are response
-        headers in reverse-proxy mode and must not be used.</li>
-        <li>The proxy must be the only way to reach %product%'s HTTP port, for example by binding
-        <code>server.http.interface</code> to <code>127.0.0.1</code> next to a sidecar proxy, or with a firewall or
-        network policy. Anyone who can reach the port directly can send any header.</li>
+        <li>The authenticating proxy removes any <code>user-header</code> and <code>subject-header</code> a client
+        sends and sets them itself from the verified session. It must <b>not</b> remove the
+        <code>on-behalf-of-header</code>: a relay is itself a client of the proxy, and removing the header would switch
+        the feature off.</li>
+        <li>Every trusted relay sets the <code>on-behalf-of-header</code> itself, overwriting any existing value, to the
+        end user of its own verified session, and never forwards a copy it received from its own clients. Otherwise any
+        user of the relay can name someone else.</li>
+        <li>%product% is reachable only through the proxy, for example by binding <code>server.http.interface</code> to
+        <code>127.0.0.1</code> next to a sidecar proxy, or with a firewall or network policy. Anyone who can reach the
+        port directly can send any header.</li>
     </list>
 </warning>
 
@@ -203,9 +219,19 @@ An on-behalf-of claim is recorded as <code>on_behalf_of</code> only if the reque
 <code>trusted-relays</code>, the header occurs exactly once, and its value is 1 to 320 bytes of UTF-8 without
 whitespace or control characters. Otherwise the record carries <code>on_behalf_of_rejected</code>
 (<code>untrusted-caller</code> or <code>invalid</code>) and the claimed value is not logged.
-The relay is responsible for naming the correct end user; %product% records the claim, it cannot verify it.
+
+<code>on_behalf_of</code> is an unverifiable claim made by an authenticated relay, recorded next to the relay's own
+identity in <code>user</code>. %product% cannot check it, and it never grants or restricts access.
 
 ### Example: oauth2-proxy
+
+In oauth2-proxy v7.15.3 (<code>pkg/middleware/headers.go</code>, <code>pkg/apis/options/legacy_options.go</code>),
+<code>pass_user_headers</code> (enabled by default) removes client-supplied <code>X-Forwarded-User</code>,
+<code>X-Forwarded-Email</code>, <code>X-Forwarded-Groups</code>, <code>X-Forwarded-Preferred-Username</code> and
+<code>X-Forwarded-Access-Token</code> from the request before setting them from the session, which makes the default
+<code>user-header</code> and <code>subject-header</code> suitable. The <code>X-Auth-Request-*</code> headers are response
+headers only: they are neither set on nor removed from the upstream request, so they must not be used as identity
+headers. Verify that the proxy version you run behaves the same.
 
 An oauth2-proxy configuration (excerpt) in front of %product%, accepting both interactive users and services that
 present their own bearer token:

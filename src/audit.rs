@@ -12,12 +12,13 @@
 //!
 //! Identity is read from the request headers named by
 //! `telemetry.audit.user-header` (default `X-Forwarded-Email`) and
-//! `telemetry.audit.subject-header` (default `X-Forwarded-User`). An
-//! authenticating reverse proxy such as oauth2-proxy sets these on the
-//! upstream request from the verified session and discards any copies the
-//! client sent. DICOM-RST itself performs no authentication (see #15/#42):
-//! these fields are TRUSTWORTHY ONLY when the proxy strips client-supplied
-//! copies and is the sole ingress. A header that occurs more than once is
+//! `telemetry.audit.subject-header` (default `X-Forwarded-User`).
+//! DICOM-RST itself performs no authentication (see #15/#42): these fields
+//! are TRUSTWORTHY ONLY when an authenticating proxy replaces any client
+//! copies of these headers with values from its verified session and is the
+//! only way to reach DICOM-RST. Whether a given proxy does so, and the rest
+//! of the trust model, is documented in the "Access Audit Config" section
+//! of `docs/topics/configuration.md`. A header that occurs more than once is
 //! ambiguous and treated as absent, as is a value that is not 1..=320 bytes
 //! of UTF-8 without control characters (never truncated: a shortened
 //! identity could equal someone else's). The record is emitted regardless —
@@ -33,20 +34,33 @@
 //! Otherwise `on_behalf_of_rejected` says why (`"untrusted-caller"` or
 //! `"invalid"`) and the claimed value is NOT recorded. With no trusted
 //! relays configured (the default) the header is not read at all and
-//! neither field ever appears.
+//! neither field ever appears. `on_behalf_of` is an unverifiable claim by an
+//! authenticated relay, recorded beside the relay's own identity; it is
+//! never used for authorization.
 //!
-//! `request_id` carries the `X-Request-Id` header (1..=128 visible ASCII
-//! characters, sent once) so a record can be correlated with the access log
-//! of the proxy or ingress that set it.
+//! `source` is the leftmost `X-Forwarded-For` entry and `request_id` the
+//! incoming `X-Request-Id` (1..=128 printable ASCII characters without
+//! space, sent once): both are client-asserted unless the proxy chain
+//! overwrites them. `request_id` lets a record be correlated with the
+//! access log of the proxy or ingress that set it. `path` (8 KiB),
+//! `user_agent` (512 bytes) and `source` (64 bytes) are capped and end in
+//! `…` when cut. If a path parameter cannot be decoded, the record carries
+//! no DICOM coordinates at all; `path` is still recorded.
+//!
+//! `status` and `duration_ms` are taken when the response head is produced,
+//! so a streamed retrieve that fails mid-body is recorded with the status of
+//! its head. A client that disconnects before the head, or a handler panic,
+//! can leave no record.
 //!
 //! Delivery is FAIL-OPEN by design: records flow through a bounded channel
 //! to a dedicated writer thread (not a Tokio task, so a stalled stdout never
-//! ties up a runtime worker); when the buffer is full the record is dropped,
-//! a counter increments and a warning is logged — a slow disk or collector
-//! never blocks request handling. Deployments with stricter requirements
-//! should alert on the drop warnings. After a graceful shutdown,
-//! [`AuditWriter::finish`] waits a bounded time for buffered records to be
-//! written; without a graceful shutdown they are lost.
+//! ties up a runtime worker); when the buffer is full the record is dropped
+//! and counted, and a warning with the running count is logged for the first
+//! drop and every 100th — a slow disk or collector never blocks request
+//! handling. Deployments with stricter requirements should alert on the drop
+//! warnings. After a graceful shutdown, [`AuditWriter::finish`] waits a
+//! bounded time for buffered records to be written; without a graceful
+//! shutdown they are lost.
 
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -106,7 +120,8 @@ pub struct AuditRecord {
 	/// `User-Agent`, if present (at most 512 bytes).
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub user_agent: Option<String>,
-	/// `X-Request-Id`, if present and well-formed.
+	/// `X-Request-Id`, if sent once as 1..=128 printable ASCII characters
+	/// without space.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub request_id: Option<String>,
 }
@@ -266,7 +281,7 @@ impl AuditSink {
 /// The middleware only observes: it never answers a request itself. Path
 /// parameters are therefore read without a rejecting extractor — a request
 /// whose parameters cannot be decoded is passed on unchanged and still
-/// audited, just without the DICOM coordinates.
+/// audited, with its path but without any of the DICOM coordinates.
 pub async fn middleware(
 	State(sink): State<AuditSink>,
 	mut request: Request,
@@ -416,7 +431,8 @@ fn end_user(value: &HeaderValue) -> Option<String> {
 		.map(str::to_owned)
 }
 
-/// A correlation id: exactly one value of 1..=128 visible ASCII characters.
+/// A correlation id: exactly one value of 1..=128 printable ASCII
+/// characters without space.
 fn request_id(headers: &HeaderMap) -> Option<String> {
 	single(headers, &X_REQUEST_ID)
 		.map(HeaderValue::as_bytes)
