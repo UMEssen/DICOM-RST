@@ -127,8 +127,10 @@ telemetry:
     <def title="telemetry.audit.enabled" id="telemetry.audit.enabled">
         Enables the access-audit log (default <code>false</code>).
         Every HTTP request then emits one self-contained JSON line on stdout.
-        Delivery is fail-open: records pass through a bounded buffer, so a slow log consumer never blocks
-        requests; dropped records are counted and logged as warnings.
+        Delivery is fail-open: records pass through a bounded buffer to a dedicated writer thread, so a slow log
+        consumer never blocks requests; dropped records are counted and logged as warnings.
+        On a graceful shutdown (<code>server.http.graceful-shutdown</code>, enabled by default) %product% waits up to
+        5 seconds for buffered records to be written. Without a graceful shutdown, buffered records are lost.
     </def>
     <def title="telemetry.audit.user-header" id="telemetry.audit.user-header">
         The request header carrying the user verified by the proxy, recorded as <code>user</code>

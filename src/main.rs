@@ -48,6 +48,9 @@ pub const IMPLEMENTATION_VERSION_NAME: &str = concat!("DICOM-RST ", env!("CARGO_
 
 pub const DEFAULT_AET: &str = "DICOM-RST";
 
+/// How long to wait after shutdown for buffered audit records to be written.
+const AUDIT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+
 fn init_logger(level: tracing::Level) {
 	tracing_subscriber::registry()
 		.with(
@@ -113,18 +116,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// See https://docs.sentry.io/platforms/rust/#async-main-function
 	let _sentry = init_sentry(&config);
 
+	// The audit writer is a plain thread, independent of the runtime.
+	let (audit_sink, audit_writer) = audit::start(&config.telemetry.audit)?.unzip();
+
 	tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
 		.build()?
 		.block_on(async move {
-			if let Err(error) = run(config).await {
+			if let Err(error) = run(config, audit_sink).await {
 				error!("Failed to start application due to error: {error}");
 			}
 		});
+
+	// The runtime and with it every audit sink are gone: let the writer
+	// drain what is still buffered.
+	if let Some(writer) = audit_writer {
+		if !writer.finish(AUDIT_FLUSH_TIMEOUT) {
+			error!("Audit log writer did not finish; buffered audit records may be lost");
+		}
+	}
 	Ok(())
 }
 
-async fn run(config: AppConfig) -> anyhow::Result<()> {
+async fn run(config: AppConfig, audit_sink: Option<audit::AuditSink>) -> anyhow::Result<()> {
 	let mediator = MoveMediator::new(&config);
 	let pools = AssociationPools::new(&config);
 
@@ -170,7 +184,7 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		));
 	// Outside the timeout layer, so timed-out requests are audited with
 	// their 408 as well. Not installed at all unless telemetry.audit.enabled.
-	let app = match audit::AuditSink::new(&config.telemetry.audit) {
+	let app = match audit_sink {
 		Some(sink) => app.layer(axum::middleware::from_fn_with_state(
 			sink,
 			audit::middleware,

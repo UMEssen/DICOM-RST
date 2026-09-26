@@ -40,14 +40,19 @@
 //! of the proxy or ingress that set it.
 //!
 //! Delivery is FAIL-OPEN by design: records flow through a bounded channel
-//! to a writer task; when the buffer is full the record is dropped, a
-//! counter increments and a warning is logged — a slow disk or collector
+//! to a dedicated writer thread (not a Tokio task, so a stalled stdout never
+//! ties up a runtime worker); when the buffer is full the record is dropped,
+//! a counter increments and a warning is logged — a slow disk or collector
 //! never blocks request handling. Deployments with stricter requirements
-//! should alert on the drop warnings.
+//! should alert on the drop warnings. After a graceful shutdown,
+//! [`AuditWriter::finish`] waits a bounded time for buffered records to be
+//! written; without a graceful shutdown they are lost.
 
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use axum::extract::{RawPathParams, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
@@ -163,36 +168,71 @@ static DROPPED: AtomicU64 = AtomicU64::new(0);
 
 const BUFFER: usize = 1024;
 
-impl AuditSink {
-	/// Spawn the stdout writer task and return its handle, or `None` when
-	/// auditing is disabled. Without a sink the middleware must not be
-	/// installed at all, so the request path is exactly that of a build
-	/// without auditing.
-	pub fn new(config: &AuditConfig) -> Option<Self> {
-		if !config.enabled {
-			return None;
+/// Start the stdout writer thread and return a sink feeding it, or `None`
+/// when auditing is disabled. Without a sink the middleware must not be
+/// installed at all, so the request path is exactly that of a build without
+/// auditing.
+///
+/// # Errors
+/// Returns an error if the writer thread cannot be spawned.
+pub fn start(config: &AuditConfig) -> std::io::Result<Option<(AuditSink, AuditWriter)>> {
+	if !config.enabled {
+		return Ok(None);
+	}
+	let (tx, rx) = mpsc::channel::<AuditRecord>(BUFFER);
+	// `Stdout::write_all` takes the lock once per call, which keeps each
+	// line atomic alongside the regular tracing output on the same stream.
+	let writer = spawn_writer(rx, std::io::stdout())?;
+	let sink = AuditSink {
+		tx,
+		config: Arc::new(config.clone()),
+	};
+	Ok(Some((sink, writer)))
+}
+
+/// Handle to the thread that writes audit records.
+pub struct AuditWriter {
+	thread: JoinHandle<()>,
+}
+
+impl AuditWriter {
+	/// Waits at most `timeout` for the writer to finish, which it does once
+	/// every [`AuditSink`] clone is dropped and all buffered records are
+	/// written. Returns whether it finished cleanly.
+	pub fn finish(self, timeout: Duration) -> bool {
+		let deadline = Instant::now() + timeout;
+		while !self.thread.is_finished() {
+			if Instant::now() >= deadline {
+				return false;
+			}
+			std::thread::sleep(Duration::from_millis(10));
 		}
-		let (tx, mut rx) = mpsc::channel::<AuditRecord>(BUFFER);
-		tokio::spawn(async move {
-			// One locked write per record keeps lines atomic alongside the
-			// regular tracing output on the same stream.
-			while let Some(record) = rx.recv().await {
+		self.thread.join().is_ok()
+	}
+}
+
+fn spawn_writer<W>(mut rx: mpsc::Receiver<AuditRecord>, mut out: W) -> std::io::Result<AuditWriter>
+where
+	W: Write + Send + 'static,
+{
+	let thread = std::thread::Builder::new()
+		.name("audit-writer".to_owned())
+		.spawn(move || {
+			while let Some(record) = rx.blocking_recv() {
 				match serde_json::to_string(&record) {
 					Ok(mut line) => {
 						line.push('\n');
-						let mut stdout = std::io::stdout().lock();
-						let _ = stdout.write_all(line.as_bytes());
+						let _ = out.write_all(line.as_bytes());
 					}
 					Err(err) => warn!("failed to serialize audit record: {err}"),
 				}
 			}
-		});
-		Some(Self {
-			tx,
-			config: Arc::new(config.clone()),
-		})
-	}
+			let _ = out.flush();
+		})?;
+	Ok(AuditWriter { thread })
+}
 
+impl AuditSink {
 	/// An enabled sink whose records are handed to the caller instead of
 	/// being written to stdout.
 	#[cfg(test)]
@@ -547,8 +587,78 @@ mod tests {
 
 	#[test]
 	fn disabled_audit_has_no_sink() {
-		// No sink means no writer task and no middleware: nothing is emitted.
-		assert!(AuditSink::new(&AuditConfig::default()).is_none());
+		// No sink means no writer thread and no middleware: nothing is emitted.
+		assert!(start(&AuditConfig::default()).expect("start").is_none());
+	}
+
+	/// An in-memory `Write` target shared with the writer thread.
+	#[derive(Clone, Default)]
+	struct SharedBuffer(Arc<std::sync::Mutex<Vec<u8>>>);
+
+	impl Write for SharedBuffer {
+		fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+			self.0.lock().expect("lock").extend_from_slice(buf);
+			Ok(buf.len())
+		}
+
+		fn flush(&mut self) -> std::io::Result<()> {
+			Ok(())
+		}
+	}
+
+	fn sample_record() -> AuditRecord {
+		AuditRecord {
+			audit: "http-access",
+			ts: "2026-08-17T00:00:00Z".to_owned(),
+			user: Some(END_USER.to_owned()),
+			subject: None,
+			on_behalf_of: None,
+			on_behalf_of_rejected: None,
+			source: None,
+			method: "GET".to_owned(),
+			path: "/aets".to_owned(),
+			aet: None,
+			study: None,
+			series: None,
+			instance: None,
+			status: 200,
+			duration_ms: 3,
+			user_agent: None,
+			request_id: None,
+		}
+	}
+
+	#[test]
+	fn writer_thread_flushes_buffered_records_on_finish() {
+		// A plain #[test]: the writer must not need a Tokio runtime.
+		let (tx, rx) = mpsc::channel(BUFFER);
+		let out = SharedBuffer::default();
+		let writer = spawn_writer(rx, out.clone()).expect("writer thread");
+		for _ in 0..3 {
+			tx.try_send(sample_record()).expect("buffer has room");
+		}
+		drop(tx);
+		assert!(writer.finish(Duration::from_secs(5)));
+
+		let written = String::from_utf8(out.0.lock().expect("lock").clone()).expect("UTF-8");
+		assert_eq!(written.lines().count(), 3, "{written}");
+		for line in written.lines() {
+			let json: serde_json::Value = serde_json::from_str(line).expect("JSON line");
+			assert_eq!(json["audit"], "http-access");
+		}
+	}
+
+	#[test]
+	fn writer_finish_is_bounded() {
+		let (tx, rx) = mpsc::channel::<AuditRecord>(BUFFER);
+		let writer = spawn_writer(rx, SharedBuffer::default()).expect("writer thread");
+		// A sink that outlives the deadline keeps the writer running.
+		let late_drop = std::thread::spawn(move || {
+			std::thread::sleep(Duration::from_millis(500));
+			drop(tx);
+		});
+		assert!(!writer.finish(Duration::from_millis(50)));
+		late_drop.join().expect("dropper");
 	}
 
 	#[tokio::test]
