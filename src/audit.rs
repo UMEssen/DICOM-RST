@@ -690,6 +690,77 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn trusted_relay_without_on_behalf_of_header_records_neither_field() {
+		let request = from_relay().body(Body::empty()).expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some(RELAY));
+		assert_eq!(record.on_behalf_of, None);
+		assert_eq!(record.on_behalf_of_rejected, None);
+		let line = serde_json::to_string(&record).expect("serialize");
+		assert!(!line.contains("on_behalf_of"), "{line}");
+	}
+
+	#[tokio::test]
+	async fn relay_is_matched_through_a_custom_user_header() {
+		let config: AuditConfig = serde_json::from_value(json!({
+			"enabled": true,
+			"user-header": "X-Forwarded-Preferred-Username",
+			"trusted-relays": ["viewer-service"],
+		}))
+		.expect("valid audit config");
+
+		let request = get_study()
+			.header("x-forwarded-preferred-username", "viewer-service")
+			.header("x-forwarded-email", "other@example.org")
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(config.clone(), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some("viewer-service"));
+		assert_eq!(record.on_behalf_of.as_deref(), Some(END_USER));
+
+		// The relay name in the default user header does not count.
+		let request = get_study()
+			.header("x-forwarded-preferred-username", "jdoe")
+			.header("x-forwarded-email", "viewer-service")
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(config, request).await.expect("record");
+		assert_eq!(record.on_behalf_of, None);
+		assert_eq!(
+			record.on_behalf_of_rejected,
+			Some(OnBehalfOfRejection::UntrustedCaller)
+		);
+	}
+
+	#[tokio::test]
+	async fn records_408_from_a_timeout_layer_inside_the_audit_layer() {
+		use axum::http::StatusCode;
+		use tower_http::timeout::TimeoutLayer;
+
+		let (sink, mut rx) = AuditSink::with_receiver(enabled());
+		let slow = || async {
+			tokio::time::sleep(Duration::from_secs(30)).await;
+			"late"
+		};
+		let app = Router::new()
+			.route("/aets/{aet}/studies/{study}", get(slow))
+			.layer(TimeoutLayer::with_status_code(
+				StatusCode::REQUEST_TIMEOUT,
+				Duration::from_millis(20),
+			))
+			.layer(axum::middleware::from_fn_with_state(sink, middleware));
+		let request = get_study().body(Body::empty()).expect("request");
+		let response = app.oneshot(request).await.expect("infallible");
+		assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+
+		let record = rx.try_recv().expect("record");
+		assert_eq!(record.status, 408);
+		assert_eq!(record.study.as_deref(), Some("1.2.3.4"));
+	}
+
+	#[tokio::test]
 	async fn relay_match_is_ascii_case_insensitive() {
 		let request = get_study()
 			.header("x-forwarded-email", "RELAY@Example.ORG")
