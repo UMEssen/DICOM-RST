@@ -183,9 +183,14 @@ const TRUNCATED: &str = "…";
 /// Audit records and the regular log share stdout, and a log message may
 /// carry request data (a percent-decoded path segment can hold a newline).
 /// Unescaped, such a message could start a line of its own that looks like
-/// an audit record. The formatter writes each event with one `write_all`,
-/// so only its final line break is kept. Not used while auditing is
-/// disabled, which leaves the log output unchanged.
+/// an audit record. tracing-subscriber formats each event into a buffer and
+/// hands it to the writer with one `write_all` (`fmt_layer.rs`, 0.3.20), so
+/// only the event's final line break is kept; the test
+/// `a_newline_ending_a_format_argument_is_escaped_too` fails if a future
+/// version ever streams an event in pieces. The guarantee is about `\n` and
+/// `\r`: consumers that also split on Unicode line separators (U+2028,
+/// U+2029, U+0085) are not covered. Not used while auditing is disabled,
+/// which leaves the log output unchanged.
 pub struct LineSafeStdout;
 
 impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LineSafeStdout {
@@ -248,8 +253,9 @@ pub fn start(config: &AuditConfig) -> std::io::Result<Option<(AuditSink, AuditWr
 		return Ok(None);
 	}
 	let (tx, rx) = mpsc::channel::<AuditRecord>(BUFFER);
-	// `Stdout::write_all` takes the lock once per call, which keeps each
-	// line atomic alongside the regular tracing output on the same stream.
+	// `Stdout::write_all` takes the lock once per call, and the regular log
+	// also writes each event with one `write_all` (see `LineSafeStdout`), so
+	// audit records and log lines never interleave mid-line.
 	let writer = spawn_writer(rx, std::io::stdout())?;
 	let sink = AuditSink {
 		tx,
@@ -414,16 +420,22 @@ pub async fn middleware(
 }
 
 /// `value` if it fits in `max` bytes; otherwise cut at a character boundary
-/// and followed by [`TRUNCATED`], the whole at most `max` bytes (every cap
-/// here is far larger than the marker).
+/// and followed by [`TRUNCATED`], the whole at most `max` bytes. A cap too
+/// small for the marker gets the cut value alone (every cap here is far
+/// larger than the marker).
 fn bounded(mut value: String, max: usize) -> String {
 	if value.len() > max {
-		let mut end = max.saturating_sub(TRUNCATED.len());
+		let marker = if max >= TRUNCATED.len() {
+			TRUNCATED
+		} else {
+			""
+		};
+		let mut end = max - marker.len();
 		while !value.is_char_boundary(end) {
 			end -= 1;
 		}
 		value.truncate(end);
-		value.push_str(TRUNCATED);
+		value.push_str(marker);
 	}
 	value
 }
@@ -1080,6 +1092,45 @@ mod tests {
 	}
 
 	#[test]
+	fn a_newline_ending_a_format_argument_is_escaped_too() {
+		// Pins that the formatter hands the writer one whole event: were an
+		// event ever streamed in pieces, a piece ending in a newline would
+		// keep it and the second argument would start a line of its own.
+		#[derive(Clone, Default)]
+		struct Shared(Arc<std::sync::Mutex<Vec<u8>>>);
+		impl Write for Shared {
+			fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+				self.0.lock().expect("lock").extend_from_slice(buf);
+				Ok(buf.len())
+			}
+			fn flush(&mut self) -> std::io::Result<()> {
+				Ok(())
+			}
+		}
+		let sink = Shared::default();
+		let make = {
+			let sink = sink.clone();
+			move || LineSafe(sink.clone())
+		};
+		let subscriber = tracing_subscriber::fmt()
+			.compact()
+			.with_ansi(false)
+			.with_writer(make)
+			.finish();
+		let forged = r#"{"audit":"http-access","user":"someone@example.org"}"#;
+		tracing::subscriber::with_default(subscriber, || {
+			tracing::info!("{}{}", "1.2.3\n", forged);
+			tracing::info!(prefix = "1.2.3\n", "{forged}");
+		});
+		let output = String::from_utf8(sink.0.lock().expect("lock").clone()).expect("utf-8");
+		assert_eq!(output.lines().count(), 2, "{output}");
+		assert!(
+			!output.lines().any(|line| line.starts_with('{')),
+			"{output}"
+		);
+	}
+
+	#[test]
 	fn bounded_cuts_at_a_character_boundary() {
 		assert_eq!(bounded("abcde".to_owned(), 5), "abcde");
 		// The 3-byte marker counts against the cap.
@@ -1092,10 +1143,16 @@ mod tests {
 	#[test]
 	fn bounded_never_exceeds_its_cap() {
 		let value = "aüß€x".repeat(10);
-		for max in TRUNCATED.len()..value.len() {
+		for max in 0..value.len() {
 			let cut = bounded(value.clone(), max);
 			assert!(cut.len() <= max, "{max}: {} bytes", cut.len());
-			assert!(cut.ends_with(TRUNCATED), "{max}: {cut}");
+			assert!(
+				value.starts_with(cut.trim_end_matches(TRUNCATED)),
+				"{max}: {cut}"
+			);
+			if max >= TRUNCATED.len() {
+				assert!(cut.ends_with(TRUNCATED), "{max}: {cut}");
+			}
 		}
 	}
 

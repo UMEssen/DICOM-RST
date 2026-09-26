@@ -186,7 +186,9 @@ include the marker.
 With auditing enabled, the log line of a completed C-MOVE also carries the <code>study_uid</code>, and line breaks inside
 a regular log message are escaped (<code>\n</code>, <code>\r</code>): audit records and the regular log share stdout, and a
 message that carries request data (a percent-decoded path segment can contain a newline) must never start a line of its
-own that looks like an audit record. With auditing disabled, the log output is unchanged.
+own that looks like an audit record. With auditing disabled, the log output is unchanged. The guarantee is about
+<code>\n</code> and <code>\r</code>; a consumer that also splits on Unicode line separators (U+2028, U+2029, U+0085) is not
+covered.
 
 What the record does and does not show:
 

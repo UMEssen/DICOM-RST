@@ -489,8 +489,6 @@ impl TryFrom<RawAuditConfig> for AuditConfig {
 	}
 }
 
-/// Headers whose values are secrets: recording them would put credentials
-/// into the audit log.
 /// Headers that carry credentials and must never become an audit field. A
 /// best-effort guard against an obvious misconfiguration, not an exhaustive
 /// list: `X-Forwarded-Access-Token` is the one oauth2-proxy sets itself.
