@@ -143,7 +143,7 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		});
 	}
 
-	let audit_sink = audit::AuditSink::new(config.telemetry.audit.enabled);
+	let audit_sink = audit::AuditSink::new(&config.telemetry.audit);
 
 	let app = api::routes(&config.server.http.base_path)
 		.layer(CorsLayer::permissive())

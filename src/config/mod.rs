@@ -1,6 +1,7 @@
 use crate::types::AE;
 use crate::DEFAULT_AET;
 
+use axum::http::HeaderName;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
 use std::net::IpAddr;
@@ -358,14 +359,84 @@ impl Default for TelemetryConfig {
 /// Configuration for the structured access-audit log ([`crate::audit`]).
 ///
 /// Disabled by default: enabling it emits one JSON line per HTTP request on
-/// stdout, carrying the identity injected by an authenticating reverse proxy
-/// (`X-Auth-Request-*`) plus the DICOM resource coordinates. Delivery is
-/// fail-open (bounded buffer, drops are counted and logged).
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+/// stdout, carrying the identity an authenticating reverse proxy forwards
+/// plus the DICOM resource coordinates. Delivery is fail-open (bounded
+/// buffer, drops are counted and logged).
+///
+/// Parsed and validated once when the configuration is loaded, so an invalid
+/// setting is a startup error rather than a per-request surprise.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "RawAuditConfig")]
 pub struct AuditConfig {
-	#[serde(default)]
 	pub enabled: bool,
+	/// Request header carrying the proxy-verified user, e.g. an e-mail address.
+	pub user_header: HeaderName,
+	/// Request header carrying the proxy-verified subject identifier.
+	pub subject_header: HeaderName,
+}
+
+impl AuditConfig {
+	/// oauth2-proxy sets this from the verified session (`pass_user_headers`).
+	pub const DEFAULT_USER_HEADER: HeaderName = HeaderName::from_static("x-forwarded-email");
+	/// oauth2-proxy sets this from the verified session (`pass_user_headers`).
+	pub const DEFAULT_SUBJECT_HEADER: HeaderName = HeaderName::from_static("x-forwarded-user");
+}
+
+impl Default for AuditConfig {
+	fn default() -> Self {
+		Self {
+			enabled: false,
+			user_header: Self::DEFAULT_USER_HEADER,
+			subject_header: Self::DEFAULT_SUBJECT_HEADER,
+		}
+	}
+}
+
+/// [`AuditConfig`] as written in the configuration, before validation.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+struct RawAuditConfig {
+	enabled: bool,
+	user_header: Option<String>,
+	subject_header: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuditConfigError {
+	#[error("telemetry.audit.{key}: {value:?} is not a valid HTTP header name")]
+	InvalidHeaderName { key: &'static str, value: String },
+}
+
+impl TryFrom<RawAuditConfig> for AuditConfig {
+	type Error = AuditConfigError;
+
+	fn try_from(raw: RawAuditConfig) -> Result<Self, Self::Error> {
+		Ok(Self {
+			enabled: raw.enabled,
+			user_header: parse_header_name(
+				"user-header",
+				raw.user_header,
+				Self::DEFAULT_USER_HEADER,
+			)?,
+			subject_header: parse_header_name(
+				"subject-header",
+				raw.subject_header,
+				Self::DEFAULT_SUBJECT_HEADER,
+			)?,
+		})
+	}
+}
+
+fn parse_header_name(
+	key: &'static str,
+	value: Option<String>,
+	default: HeaderName,
+) -> Result<HeaderName, AuditConfigError> {
+	let Some(value) = value else {
+		return Ok(default);
+	};
+	HeaderName::from_bytes(value.as_bytes())
+		.map_err(|_| AuditConfigError::InvalidHeaderName { key, value })
 }
 
 /// Deserializer for [`tracing::Level`] as it does not implement [Deserialize]
@@ -377,4 +448,56 @@ where
 
 	tracing::Level::from_str(&value)
 		.map_err(|_| Error::unknown_variant(&value, &["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Loads a configuration the same way [`AppConfig::new`] does, minus the
+	/// file system and environment.
+	fn load(yaml: &str) -> Result<AppConfig, config::ConfigError> {
+		use config::{Config, File, FileFormat};
+		Config::builder()
+			.add_source(File::from_str(yaml, FileFormat::Yaml))
+			.build()?
+			.try_deserialize()
+	}
+
+	#[test]
+	fn audit_defaults_without_audit_section() {
+		let config = load("telemetry:\n  level: INFO\n").expect("valid config");
+		let audit = config.telemetry.audit;
+		assert!(!audit.enabled);
+		assert_eq!(audit.user_header, "x-forwarded-email");
+		assert_eq!(audit.subject_header, "x-forwarded-user");
+	}
+
+	#[test]
+	fn audit_defaults_without_new_keys() {
+		let yaml = "telemetry:\n  level: INFO\n  audit:\n    enabled: true\n";
+		let audit = load(yaml).expect("valid config").telemetry.audit;
+		assert!(audit.enabled);
+		assert_eq!(audit.user_header, AuditConfig::DEFAULT_USER_HEADER);
+		assert_eq!(audit.subject_header, AuditConfig::DEFAULT_SUBJECT_HEADER);
+	}
+
+	#[test]
+	fn audit_identity_headers_are_configurable() {
+		let yaml = "telemetry:\n  level: INFO\n  audit:\n    enabled: true\n    \
+			user-header: X-Forwarded-Preferred-Username\n    subject-header: X-Subject\n";
+		let audit = load(yaml).expect("valid config").telemetry.audit;
+		assert_eq!(audit.user_header, "x-forwarded-preferred-username");
+		assert_eq!(audit.subject_header, "x-subject");
+	}
+
+	#[test]
+	fn invalid_audit_header_name_is_a_load_error() {
+		let yaml = "telemetry:\n  level: INFO\n  audit:\n    user-header: \"X Bad Header\"\n";
+		let error = load(yaml).expect_err("invalid header name must be rejected");
+		assert!(
+			error.to_string().contains("user-header"),
+			"error should name the key: {error}"
+		);
+	}
 }

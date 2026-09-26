@@ -10,12 +10,16 @@
 //!  "study":"1.2.3.4","status":200,"duration_ms":4886}
 //! ```
 //!
-//! Identity is read from the `X-Auth-Request-User` / `X-Auth-Request-Email`
-//! headers that an authenticating reverse proxy (e.g. oauth2-proxy with
-//! `set_xauthrequest`) injects. DICOM-RST itself performs no authentication
-//! (see #15/#42): these fields are TRUSTWORTHY ONLY when the deployment
-//! guarantees that the proxy is the sole ingress. The record is emitted
-//! regardless — an absent identity is itself audit-relevant.
+//! Identity is read from the request headers named by
+//! `telemetry.audit.user-header` (default `X-Forwarded-Email`) and
+//! `telemetry.audit.subject-header` (default `X-Forwarded-User`). An
+//! authenticating reverse proxy such as oauth2-proxy sets these on the
+//! upstream request from the verified session and discards any copies the
+//! client sent. DICOM-RST itself performs no authentication (see #15/#42):
+//! these fields are TRUSTWORTHY ONLY when the proxy strips client-supplied
+//! copies and is the sole ingress. A header that occurs more than once is
+//! ambiguous and treated as absent. The record is emitted regardless — an
+//! absent identity is itself audit-relevant.
 //!
 //! Delivery is FAIL-OPEN by design: records flow through a bounded channel
 //! to a writer task; when the buffer is full the record is dropped, a
@@ -25,14 +29,18 @@
 
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use axum::extract::{RawPathParams, Request, State};
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tracing::warn;
+
+use crate::config::AuditConfig;
 
 /// One audit record per HTTP request.
 #[derive(Debug, Serialize)]
@@ -41,10 +49,10 @@ pub struct AuditRecord {
 	pub audit: &'static str,
 	/// Wall-clock request completion time (UTC, RFC 3339, second precision).
 	pub ts: String,
-	/// `X-Auth-Request-Email` from the authenticating proxy, if present.
+	/// Proxy-verified user from `telemetry.audit.user-header`, if present.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub user: Option<String>,
-	/// `X-Auth-Request-User` (the OIDC subject), if present.
+	/// Proxy-verified subject from `telemetry.audit.subject-header`, if present.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub subject: Option<String>,
 	/// First `X-Forwarded-For` entry, if present.
@@ -73,6 +81,7 @@ pub struct AuditRecord {
 #[derive(Clone)]
 pub struct AuditSink {
 	tx: Option<mpsc::Sender<AuditRecord>>,
+	config: Arc<AuditConfig>,
 }
 
 /// Records dropped because the buffer was full (fail-open pressure valve).
@@ -82,9 +91,10 @@ const BUFFER: usize = 1024;
 
 impl AuditSink {
 	/// Create the sink and, when enabled, spawn the stdout writer task.
-	pub fn new(enabled: bool) -> Self {
-		if !enabled {
-			return Self { tx: None };
+	pub fn new(config: &AuditConfig) -> Self {
+		let config = Arc::new(config.clone());
+		if !config.enabled {
+			return Self { tx: None, config };
 		}
 		let (tx, mut rx) = mpsc::channel::<AuditRecord>(BUFFER);
 		tokio::spawn(async move {
@@ -101,7 +111,22 @@ impl AuditSink {
 				}
 			}
 		});
-		Self { tx: Some(tx) }
+		Self {
+			tx: Some(tx),
+			config,
+		}
+	}
+
+	/// An enabled sink whose records are handed to the caller instead of
+	/// being written to stdout.
+	#[cfg(test)]
+	fn with_receiver(config: AuditConfig) -> (Self, mpsc::Receiver<AuditRecord>) {
+		let (tx, rx) = mpsc::channel(BUFFER);
+		let sink = Self {
+			tx: Some(tx),
+			config: Arc::new(config),
+		};
+		(sink, rx)
 	}
 
 	fn emit(&self, record: AuditRecord) {
@@ -159,8 +184,8 @@ pub async fn middleware(
 				.map(str::to_owned)
 		};
 		(
-			get("x-auth-request-email"),
-			get("x-auth-request-user"),
+			identity(headers, &sink.config.user_header),
+			identity(headers, &sink.config.subject_header),
 			get("x-forwarded-for").map(|forwarded| {
 				forwarded
 					.split(',')
@@ -198,9 +223,113 @@ pub async fn middleware(
 	response
 }
 
+/// The value of `name`, if the header occurs exactly once: a repeated header
+/// is ambiguous and must not decide who the caller is.
+fn single<'h>(headers: &'h HeaderMap, name: &HeaderName) -> Option<&'h HeaderValue> {
+	let mut values = headers.get_all(name).iter();
+	let value = values.next()?;
+	values.next().is_none().then_some(value)
+}
+
+/// A proxy-asserted identity: exactly one non-empty, visible-ASCII value.
+fn identity(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
+	single(headers, name)
+		.and_then(|value| value.to_str().ok())
+		.filter(|value| !value.is_empty())
+		.map(str::to_owned)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use axum::body::Body;
+	use axum::routing::get;
+	use axum::Router;
+	use tower::ServiceExt;
+
+	fn enabled() -> AuditConfig {
+		AuditConfig {
+			enabled: true,
+			..AuditConfig::default()
+		}
+	}
+
+	/// Sends one request through a router carrying the audit middleware and
+	/// returns the record it produced, if any.
+	async fn audit(config: AuditConfig, request: Request) -> Option<AuditRecord> {
+		let (sink, mut rx) = AuditSink::with_receiver(config);
+		let app = Router::new()
+			.route("/aets/{aet}/studies/{study}", get(|| async { "ok" }))
+			.layer(axum::middleware::from_fn_with_state(sink, middleware));
+		let response = app.oneshot(request).await.expect("infallible");
+		assert_eq!(response.status(), 200);
+		rx.try_recv().ok()
+	}
+
+	fn get_study() -> axum::http::request::Builder {
+		Request::get("/aets/PACS/studies/1.2.3.4")
+	}
+
+	#[tokio::test]
+	async fn records_identity_from_forwarded_headers() {
+		let request = get_study()
+			.header("x-forwarded-email", "jane.doe@example.org")
+			.header("x-forwarded-user", "3f2c9a4e")
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some("jane.doe@example.org"));
+		assert_eq!(record.subject.as_deref(), Some("3f2c9a4e"));
+		assert_eq!(record.aet.as_deref(), Some("PACS"));
+		assert_eq!(record.study.as_deref(), Some("1.2.3.4"));
+	}
+
+	#[tokio::test]
+	async fn ignores_x_auth_request_headers() {
+		// Response headers in oauth2-proxy's reverse-proxy mode: never set on
+		// the upstream request and never stripped from it, so a client can
+		// send them at will.
+		let request = get_study()
+			.header("x-auth-request-email", "forged@example.com")
+			.header("x-auth-request-user", "forged")
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+		assert_eq!(record.user, None);
+		assert_eq!(record.subject, None);
+	}
+
+	#[tokio::test]
+	async fn identity_header_is_configurable() {
+		let config = AuditConfig {
+			user_header: HeaderName::from_static("x-forwarded-preferred-username"),
+			..enabled()
+		};
+		let request = get_study()
+			.header("x-forwarded-preferred-username", "jdoe")
+			.header("x-forwarded-email", "jane.doe@example.org")
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(config, request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some("jdoe"));
+	}
+
+	#[tokio::test]
+	async fn repeated_identity_header_is_treated_as_absent() {
+		let request = get_study()
+			.header("x-forwarded-email", "jane.doe@example.org")
+			.header("x-forwarded-email", "john.doe@example.org")
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+		assert_eq!(record.user, None);
+	}
+
+	#[tokio::test]
+	async fn disabled_sink_emits_nothing() {
+		let sink = AuditSink::new(&AuditConfig::default());
+		assert!(sink.tx.is_none(), "no writer task when disabled");
+	}
 
 	#[test]
 	fn record_serializes_without_absent_fields() {

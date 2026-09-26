@@ -68,6 +68,8 @@ aws-credential-types = { version = "1.2.13", optional = true }
 testcontainers = "0.27.3"
 dicom-test-files = "0.4.0"
 dicom-web = "0.6.0"
+# `ServiceExt::oneshot` for middleware tests
+tower = { version = "0.5.2", features = ["util"] }
 
 [lints.rust]
 unsafe_code = "forbid"
