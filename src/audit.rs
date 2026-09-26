@@ -596,6 +596,24 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn honoured_value_is_json_escaped_in_the_audit_line() {
+		// A trusted relay's value is recorded verbatim, but as data inside
+		// the JSON line: quotes and backslashes can neither close the field
+		// nor forge another key.
+		let forged = r#"a"b\c","audit":"forged"#;
+		let request = from_relay()
+			.header("x-on-behalf-of", forged)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(record.on_behalf_of.as_deref(), Some(forged));
+		let line = serde_json::to_string(&record).expect("serialize");
+		let parsed: serde_json::Value = serde_json::from_str(&line).expect("one JSON object");
+		assert_eq!(parsed["audit"], "http-access", "{line}");
+		assert_eq!(parsed["on_behalf_of"], forged, "{line}");
+	}
+
+	#[tokio::test]
 	async fn malformed_on_behalf_of_values_are_invalid() {
 		let longest = "a".repeat(MAX_END_USER_LEN);
 		let too_long = "a".repeat(MAX_END_USER_LEN + 1);
