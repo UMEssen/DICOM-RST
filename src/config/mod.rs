@@ -373,6 +373,11 @@ pub struct AuditConfig {
 	pub user_header: HeaderName,
 	/// Request header carrying the proxy-verified subject identifier.
 	pub subject_header: HeaderName,
+	/// Callers (as identified by `user_header`) that may name the end user
+	/// they act for in `on_behalf_of_header`. Empty: nobody may.
+	pub trusted_relays: TrustedRelays,
+	/// Request header in which a trusted relay names the end user.
+	pub on_behalf_of_header: HeaderName,
 }
 
 impl AuditConfig {
@@ -380,6 +385,7 @@ impl AuditConfig {
 	pub const DEFAULT_USER_HEADER: HeaderName = HeaderName::from_static("x-forwarded-email");
 	/// oauth2-proxy sets this from the verified session (`pass_user_headers`).
 	pub const DEFAULT_SUBJECT_HEADER: HeaderName = HeaderName::from_static("x-forwarded-user");
+	pub const DEFAULT_ON_BEHALF_OF_HEADER: HeaderName = HeaderName::from_static("x-on-behalf-of");
 }
 
 impl Default for AuditConfig {
@@ -388,7 +394,42 @@ impl Default for AuditConfig {
 			enabled: false,
 			user_header: Self::DEFAULT_USER_HEADER,
 			subject_header: Self::DEFAULT_SUBJECT_HEADER,
+			trusted_relays: TrustedRelays::default(),
+			on_behalf_of_header: Self::DEFAULT_ON_BEHALF_OF_HEADER,
 		}
+	}
+}
+
+/// Identities trusted to act on behalf of an end user, as they appear in
+/// the user header. Trimmed, non-empty and ASCII-lowercased at load time;
+/// matching is ASCII case-insensitive.
+#[derive(Debug, Clone, Default)]
+pub struct TrustedRelays(Vec<String>);
+
+impl TrustedRelays {
+	fn parse(relays: Vec<String>) -> Result<Self, AuditConfigError> {
+		relays
+			.into_iter()
+			.map(|relay| {
+				let relay = relay.trim();
+				if relay.is_empty() {
+					Err(AuditConfigError::EmptyTrustedRelay)
+				} else {
+					Ok(relay.to_ascii_lowercase())
+				}
+			})
+			.collect::<Result<_, _>>()
+			.map(Self)
+	}
+
+	pub const fn is_empty(&self) -> bool {
+		self.0.is_empty()
+	}
+
+	pub fn contains(&self, identity: &str) -> bool {
+		self.0
+			.iter()
+			.any(|relay| relay.eq_ignore_ascii_case(identity))
 	}
 }
 
@@ -399,19 +440,25 @@ struct RawAuditConfig {
 	enabled: bool,
 	user_header: Option<String>,
 	subject_header: Option<String>,
+	trusted_relays: Vec<String>,
+	on_behalf_of_header: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuditConfigError {
 	#[error("telemetry.audit.{key}: {value:?} is not a valid HTTP header name")]
 	InvalidHeaderName { key: &'static str, value: String },
+	#[error("telemetry.audit.trusted-relays: entries must not be empty")]
+	EmptyTrustedRelay,
+	#[error("telemetry.audit.on-behalf-of-header must differ from user-header and subject-header")]
+	OnBehalfOfHeaderCollision,
 }
 
 impl TryFrom<RawAuditConfig> for AuditConfig {
 	type Error = AuditConfigError;
 
 	fn try_from(raw: RawAuditConfig) -> Result<Self, Self::Error> {
-		Ok(Self {
+		let config = Self {
 			enabled: raw.enabled,
 			user_header: parse_header_name(
 				"user-header",
@@ -423,7 +470,20 @@ impl TryFrom<RawAuditConfig> for AuditConfig {
 				raw.subject_header,
 				Self::DEFAULT_SUBJECT_HEADER,
 			)?,
-		})
+			trusted_relays: TrustedRelays::parse(raw.trusted_relays)?,
+			on_behalf_of_header: parse_header_name(
+				"on-behalf-of-header",
+				raw.on_behalf_of_header,
+				Self::DEFAULT_ON_BEHALF_OF_HEADER,
+			)?,
+		};
+		// The relay's own identity header cannot double as the end user's.
+		if config.on_behalf_of_header == config.user_header
+			|| config.on_behalf_of_header == config.subject_header
+		{
+			return Err(AuditConfigError::OnBehalfOfHeaderCollision);
+		}
+		Ok(config)
 	}
 }
 
@@ -471,6 +531,8 @@ mod tests {
 		assert!(!audit.enabled);
 		assert_eq!(audit.user_header, "x-forwarded-email");
 		assert_eq!(audit.subject_header, "x-forwarded-user");
+		assert!(audit.trusted_relays.is_empty());
+		assert_eq!(audit.on_behalf_of_header, "x-on-behalf-of");
 	}
 
 	#[test]
@@ -480,6 +542,38 @@ mod tests {
 		assert!(audit.enabled);
 		assert_eq!(audit.user_header, AuditConfig::DEFAULT_USER_HEADER);
 		assert_eq!(audit.subject_header, AuditConfig::DEFAULT_SUBJECT_HEADER);
+		assert!(audit.trusted_relays.is_empty());
+		assert_eq!(
+			audit.on_behalf_of_header,
+			AuditConfig::DEFAULT_ON_BEHALF_OF_HEADER
+		);
+	}
+
+	#[test]
+	fn audit_trusted_relays_are_normalised() {
+		let yaml = "telemetry:\n  level: INFO\n  audit:\n    enabled: true\n    \
+			trusted-relays:\n      - \" Relay@Example.ORG \"\n    \
+			on-behalf-of-header: X-Acting-For\n";
+		let audit = load(yaml).expect("valid config").telemetry.audit;
+		assert!(audit.trusted_relays.contains("relay@example.org"));
+		assert!(audit.trusted_relays.contains("RELAY@EXAMPLE.ORG"));
+		assert!(!audit.trusted_relays.contains("other@example.org"));
+		assert_eq!(audit.on_behalf_of_header, "x-acting-for");
+	}
+
+	#[test]
+	fn empty_trusted_relay_is_a_load_error() {
+		let yaml = "telemetry:\n  level: INFO\n  audit:\n    trusted-relays:\n      - \"  \"\n";
+		let error = load(yaml).expect_err("empty relay must be rejected");
+		assert!(error.to_string().contains("trusted-relays"), "{error}");
+	}
+
+	#[test]
+	fn on_behalf_of_header_must_not_be_an_identity_header() {
+		let yaml = "telemetry:\n  level: INFO\n  audit:\n    \
+			on-behalf-of-header: X-Forwarded-Email\n";
+		let error = load(yaml).expect_err("header collision must be rejected");
+		assert!(error.to_string().contains("on-behalf-of-header"), "{error}");
 	}
 
 	#[test]

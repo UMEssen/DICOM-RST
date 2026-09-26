@@ -21,6 +21,18 @@
 //! ambiguous and treated as absent. The record is emitted regardless — an
 //! absent identity is itself audit-relevant.
 //!
+//! A caller that acts for someone else (e.g. a backend service fetching
+//! images for a signed-in user) can name that end user in the header set by
+//! `telemetry.audit.on-behalf-of-header` (default `X-On-Behalf-Of`). The
+//! claim is recorded as `on_behalf_of` only if the caller's own verified
+//! identity (`user`) is listed in `telemetry.audit.trusted-relays` (ASCII
+//! case-insensitive), the header occurs exactly once, and its value is
+//! 1..=320 bytes of UTF-8 without whitespace or control characters.
+//! Otherwise `on_behalf_of_rejected` says why (`"untrusted-caller"` or
+//! `"invalid"`) and the claimed value is NOT recorded. With no trusted
+//! relays configured (the default) the header is not read at all and
+//! neither field ever appears.
+//!
 //! Delivery is FAIL-OPEN by design: records flow through a bounded channel
 //! to a writer task; when the buffer is full the record is dropped, a
 //! counter increments and a warning is logged — a slow disk or collector
@@ -56,6 +68,13 @@ pub struct AuditRecord {
 	/// Proxy-verified subject from `telemetry.audit.subject-header`, if present.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub subject: Option<String>,
+	/// End user named by a trusted relay (see the module docs).
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub on_behalf_of: Option<String>,
+	/// Why an on-behalf-of header was ignored. The ignored value itself is
+	/// never recorded: it came from a caller that may not make the claim.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub on_behalf_of_rejected: Option<OnBehalfOfRejection>,
 	/// First `X-Forwarded-For` entry, if present.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub source: Option<String>,
@@ -76,6 +95,39 @@ pub struct AuditRecord {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub user_agent: Option<String>,
 }
+
+/// Why an on-behalf-of header was not honoured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnBehalfOfRejection {
+	/// The caller is unidentified or not a configured trusted relay.
+	UntrustedCaller,
+	/// A trusted relay sent the header more than once or a malformed value.
+	Invalid,
+}
+
+/// Outcome of evaluating the on-behalf-of header for one request.
+#[derive(Debug)]
+enum Delegation {
+	/// Nothing to decide: no trusted relays configured, or no header sent.
+	NotClaimed,
+	Honoured(String),
+	Rejected(OnBehalfOfRejection),
+}
+
+impl Delegation {
+	fn into_fields(self) -> (Option<String>, Option<OnBehalfOfRejection>) {
+		match self {
+			Self::NotClaimed => (None, None),
+			Self::Honoured(end_user) => (Some(end_user), None),
+			Self::Rejected(reason) => (None, Some(reason)),
+		}
+	}
+}
+
+/// Room for the longest e-mail address (64-octet local part, `@`, 255-octet
+/// domain).
+const MAX_END_USER_LEN: usize = 320;
 
 /// Cloneable handle to the audit writer. Only exists while auditing is
 /// enabled.
@@ -179,7 +231,7 @@ pub async fn middleware(
 	// a closure borrowing `&Request` held across `next.run().await` makes
 	// the future `!Send` (axum's `Body` is `!Sync`), failing the middleware
 	// `Service` bound with a famously opaque error.
-	let (user, subject, source, user_agent) = {
+	let (user, subject, delegation, source, user_agent) = {
 		let headers = request.headers();
 		let get = |name: &str| {
 			headers
@@ -187,9 +239,12 @@ pub async fn middleware(
 				.and_then(|value| value.to_str().ok())
 				.map(str::to_owned)
 		};
+		let user = identity(headers, &sink.config.user_header);
+		let delegation = delegation_for(&sink.config, headers, user.as_deref());
 		(
-			identity(headers, &sink.config.user_header),
+			user,
 			identity(headers, &sink.config.subject_header),
+			delegation,
 			get("x-forwarded-for").map(|forwarded| {
 				forwarded
 					.split(',')
@@ -204,6 +259,8 @@ pub async fn middleware(
 	let method = request.method().to_string();
 	let path = request.uri().to_string();
 
+	let (on_behalf_of, on_behalf_of_rejected) = delegation.into_fields();
+
 	let started = std::time::Instant::now();
 	let response = next.run(request).await;
 
@@ -212,6 +269,8 @@ pub async fn middleware(
 		ts: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
 		user,
 		subject,
+		on_behalf_of,
+		on_behalf_of_rejected,
 		source,
 		method,
 		path,
@@ -243,19 +302,76 @@ fn identity(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
 		.map(str::to_owned)
 }
 
+/// Decides whether `caller` (the verified `user`) may name the end user it
+/// acts for. See the module docs for the rules.
+fn delegation_for(config: &AuditConfig, headers: &HeaderMap, caller: Option<&str>) -> Delegation {
+	// Without trusted relays the header is not even looked at.
+	if config.trusted_relays.is_empty() {
+		return Delegation::NotClaimed;
+	}
+	let mut values = headers.get_all(&config.on_behalf_of_header).iter();
+	let Some(value) = values.next() else {
+		return Delegation::NotClaimed;
+	};
+	if !caller.is_some_and(|caller| config.trusted_relays.contains(caller)) {
+		return Delegation::Rejected(OnBehalfOfRejection::UntrustedCaller);
+	}
+	if values.next().is_some() {
+		return Delegation::Rejected(OnBehalfOfRejection::Invalid);
+	}
+	end_user(value).map_or(
+		Delegation::Rejected(OnBehalfOfRejection::Invalid),
+		Delegation::Honoured,
+	)
+}
+
+/// An end-user identity as named by a trusted relay: 1..=320 bytes of UTF-8
+/// without whitespace or control characters.
+fn end_user(value: &HeaderValue) -> Option<String> {
+	let value = std::str::from_utf8(value.as_bytes()).ok()?;
+	let well_formed = (1..=MAX_END_USER_LEN).contains(&value.len())
+		&& !value
+			.chars()
+			.any(|ch| ch.is_whitespace() || ch.is_control());
+	well_formed.then(|| value.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use axum::body::Body;
 	use axum::routing::get;
 	use axum::Router;
+	use serde_json::json;
 	use tower::ServiceExt;
+
+	const RELAY: &str = "relay@example.org";
+	const END_USER: &str = "jane.doe@example.org";
 
 	fn enabled() -> AuditConfig {
 		AuditConfig {
 			enabled: true,
 			..AuditConfig::default()
 		}
+	}
+
+	/// Parsed like the real configuration, so relays are normalised.
+	fn with_relays(relays: &[&str]) -> AuditConfig {
+		serde_json::from_value(json!({ "enabled": true, "trusted-relays": relays }))
+			.expect("valid audit config")
+	}
+
+	fn from_relay() -> axum::http::request::Builder {
+		get_study().header("x-forwarded-email", RELAY)
+	}
+
+	/// The record as a JSON object, minus the fields that vary between runs.
+	fn stable_json(record: &AuditRecord) -> serde_json::Value {
+		let mut json = serde_json::to_value(record).expect("serialize");
+		let object = json.as_object_mut().expect("object");
+		object.remove("ts");
+		object.remove("duration_ms");
+		json
 	}
 
 	fn app() -> Router {
@@ -353,6 +469,152 @@ mod tests {
 		assert_eq!(record.study, None);
 	}
 
+	#[tokio::test]
+	async fn trusted_relay_names_end_user() {
+		let request = from_relay()
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some(RELAY));
+		assert_eq!(record.on_behalf_of.as_deref(), Some(END_USER));
+		assert_eq!(record.on_behalf_of_rejected, None);
+	}
+
+	#[tokio::test]
+	async fn relay_match_is_ascii_case_insensitive() {
+		let request = get_study()
+			.header("x-forwarded-email", "RELAY@Example.ORG")
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&["Relay@example.org"]), request)
+			.await
+			.expect("record");
+		assert_eq!(record.on_behalf_of.as_deref(), Some(END_USER));
+	}
+
+	#[tokio::test]
+	async fn untrusted_caller_is_rejected_without_recording_the_claim() {
+		let request = get_study()
+			.header("x-forwarded-email", "mallory@example.com")
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some("mallory@example.com"));
+		assert_eq!(record.on_behalf_of, None);
+		assert_eq!(
+			record.on_behalf_of_rejected,
+			Some(OnBehalfOfRejection::UntrustedCaller)
+		);
+		let line = serde_json::to_string(&record).expect("serialize");
+		assert!(!line.contains(END_USER), "claimed value leaked: {line}");
+		assert!(line.contains(r#""on_behalf_of_rejected":"untrusted-caller""#));
+	}
+
+	#[tokio::test]
+	async fn unidentified_caller_is_rejected() {
+		let request = get_study()
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(record.user, None);
+		assert_eq!(record.on_behalf_of, None);
+		assert_eq!(
+			record.on_behalf_of_rejected,
+			Some(OnBehalfOfRejection::UntrustedCaller)
+		);
+	}
+
+	#[tokio::test]
+	async fn relay_identity_must_come_from_the_user_header() {
+		// The relay's address in any other header (here the subject header)
+		// does not make the caller a relay.
+		let request = get_study()
+			.header("x-forwarded-user", RELAY)
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(
+			record.on_behalf_of_rejected,
+			Some(OnBehalfOfRejection::UntrustedCaller)
+		);
+	}
+
+	#[tokio::test]
+	async fn without_trusted_relays_the_header_changes_nothing() {
+		let plain = from_relay().body(Body::empty()).expect("request");
+		let claimed = from_relay()
+			.header("x-on-behalf-of", END_USER)
+			.body(Body::empty())
+			.expect("request");
+		let plain = audit(enabled(), plain).await.expect("record");
+		let claimed = audit(enabled(), claimed).await.expect("record");
+		assert_eq!(stable_json(&claimed), stable_json(&plain));
+		let line = serde_json::to_string(&claimed).expect("serialize");
+		assert!(!line.contains("on_behalf_of"), "{line}");
+	}
+
+	#[tokio::test]
+	async fn repeated_on_behalf_of_header_is_invalid() {
+		let request = from_relay()
+			.header("x-on-behalf-of", END_USER)
+			.header("x-on-behalf-of", "john.doe@example.org")
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+		assert_eq!(record.on_behalf_of, None);
+		assert_eq!(
+			record.on_behalf_of_rejected,
+			Some(OnBehalfOfRejection::Invalid)
+		);
+	}
+
+	#[tokio::test]
+	async fn malformed_on_behalf_of_values_are_invalid() {
+		let longest = "a".repeat(MAX_END_USER_LEN);
+		let too_long = "a".repeat(MAX_END_USER_LEN + 1);
+		let malformed: [&[u8]; 6] = [
+			b"",
+			too_long.as_bytes(),
+			b"jane doe@example.org",
+			b"jane\tdoe@example.org",
+			"jane\u{85}doe@example.org".as_bytes(),
+			b"jane\xFFdoe@example.org",
+		];
+		for value in malformed {
+			let request = from_relay()
+				.header(
+					"x-on-behalf-of",
+					HeaderValue::from_bytes(value).expect("header"),
+				)
+				.body(Body::empty())
+				.expect("request");
+			let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+			assert_eq!(record.on_behalf_of, None, "{value:?}");
+			assert_eq!(
+				record.on_behalf_of_rejected,
+				Some(OnBehalfOfRejection::Invalid),
+				"{value:?}"
+			);
+		}
+
+		for value in [longest.as_str(), "jürgen@example.org"] {
+			let request = from_relay()
+				.header(
+					"x-on-behalf-of",
+					HeaderValue::from_bytes(value.as_bytes()).expect("header"),
+				)
+				.body(Body::empty())
+				.expect("request");
+			let record = audit(with_relays(&[RELAY]), request).await.expect("record");
+			assert_eq!(record.on_behalf_of.as_deref(), Some(value));
+		}
+	}
+
 	#[test]
 	fn record_serializes_without_absent_fields() {
 		let record = AuditRecord {
@@ -360,6 +622,8 @@ mod tests {
 			ts: "2026-08-17T00:00:00Z".to_owned(),
 			user: None,
 			subject: None,
+			on_behalf_of: None,
+			on_behalf_of_rejected: None,
 			source: None,
 			method: "GET".to_owned(),
 			path: "/aets".to_owned(),
