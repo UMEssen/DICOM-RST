@@ -15,25 +15,34 @@ use tracing::{error, info, instrument, trace};
 pub struct MoveServiceClassUser {
 	pool: AssociationPool,
 	timeout: Duration,
+	/// Name the study on the completion log line. Set only with
+	/// `telemetry.audit.enabled`, so default log output is unchanged.
+	log_study_uid: bool,
 }
 
 impl MoveServiceClassUser {
-	pub const fn new(pool: AssociationPool, timeout: Duration) -> Self {
-		Self { pool, timeout }
+	pub const fn new(pool: AssociationPool, timeout: Duration, log_study_uid: bool) -> Self {
+		Self {
+			pool,
+			timeout,
+			log_study_uid,
+		}
 	}
 
 	#[instrument(skip_all, name = "MOVE-SCU")]
 	#[allow(clippy::significant_drop_tightening)]
 	pub async fn invoke(&self, request: CompositeMoveRequest) -> Result<(), MoveError> {
-		// Surface WHICH study the C-MOVE concerns — the audit trail needs
-		// more than "a move happened".
-		let study_uid = request
-			.identifier
-			.element(tags::STUDY_INSTANCE_UID)
-			.ok()
-			.and_then(|element| element.to_str().ok())
-			.map(|uid| uid.trim_end_matches('\0').to_owned())
-			.unwrap_or_default();
+		// When auditing, surface WHICH study the C-MOVE concerns — the audit
+		// trail needs more than "a move happened".
+		let study_uid = self.log_study_uid.then(|| {
+			request
+				.identifier
+				.element(tags::STUDY_INSTANCE_UID)
+				.ok()
+				.and_then(|element| element.to_str().ok())
+				.map(|uid| uid.trim_end_matches('\0').to_owned())
+				.unwrap_or_default()
+		});
 		let mut association = self
 			.pool
 			.get(PresentationParameter {
@@ -63,7 +72,11 @@ impl MoveServiceClassUser {
 
 			match status_type {
 				StatusType::Success => {
-					info!(study_uid, "C-MOVE completed successfully");
+					if let Some(study_uid) = &study_uid {
+						info!(study_uid, "C-MOVE completed successfully");
+					} else {
+						info!("C-MOVE completed successfully");
+					}
 					break;
 				}
 				StatusType::Pending => {
