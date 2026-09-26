@@ -18,6 +18,7 @@ use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::ServiceExt;
+use std::ffi::OsStr;
 use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -54,7 +55,10 @@ fn init_logger(level: tracing::Level) {
 				.compact()
 				// ANSI escapes belong on terminals, not in collected pod
 				// logs (they garble downstream log pipelines).
-				.with_ansi(std::io::stdout().is_terminal())
+				.with_ansi(use_ansi(
+					std::io::stdout().is_terminal(),
+					std::env::var_os("NO_COLOR").as_deref(),
+				))
 				.with_file(false)
 				.with_line_number(false)
 				.with_target(false),
@@ -66,6 +70,13 @@ fn init_logger(level: tracing::Level) {
 		)
 		.with(sentry::integrations::tracing::layer())
 		.init();
+}
+
+/// ANSI colors only on a terminal, and not when `NO_COLOR` is set to a
+/// non-empty value (<https://no-color.org>), which tracing-subscriber would
+/// otherwise honour by default.
+fn use_ansi(stdout_is_terminal: bool, no_color: Option<&OsStr>) -> bool {
+	stdout_is_terminal && no_color.is_none_or(OsStr::is_empty)
 }
 
 #[derive(Clone)]
@@ -224,4 +235,18 @@ async fn add_common_headers(req: Request, next: axum::middleware::Next) -> Respo
 	let headers = response.headers_mut();
 	headers.insert("Server", axum::http::HeaderValue::from_static(server_name));
 	response
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn ansi_only_on_a_terminal_without_no_color() {
+		assert!(use_ansi(true, None));
+		assert!(use_ansi(true, Some(OsStr::new(""))));
+		assert!(!use_ansi(true, Some(OsStr::new("1"))));
+		assert!(!use_ansi(false, None));
+		assert!(!use_ansi(false, Some(OsStr::new("1"))));
+	}
 }

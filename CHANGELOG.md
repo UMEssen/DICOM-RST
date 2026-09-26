@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated `dicom-rs` dependency to 0.10.0
 - ANSI colors in the log output are disabled when stdout is not a terminal (e.g. in containers), so collected logs stay
-  machine-parseable (#62)
+  machine-parseable. `NO_COLOR` is still honoured on terminals (#62)
 
 ## [0.3.1] - 2026-09-14
 
