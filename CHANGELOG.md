@@ -10,12 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Optional `mimalloc` feature that uses mimalloc as the global allocator. Enabled by default in the Docker images to reduce memory growth in long-running deployments (#68)
+- Opt-in access-audit log (`telemetry.audit.enabled`, disabled by default): one JSON line per HTTP request on stdout
+  with the user and subject verified by an authenticating reverse proxy (`telemetry.audit.user-header` and
+  `telemetry.audit.subject-header`, default `X-Forwarded-Email` and `X-Forwarded-User`), source address, method,
+  path, DICOM coordinates, status and duration. With auditing enabled, the C-MOVE completion log line also carries the
+  Study Instance UID (#62)
+- Trusted relays for the access-audit log (`telemetry.audit.trusted-relays`, `telemetry.audit.on-behalf-of-header`):
+  explicitly trusted callers can name the end user they act for, recorded as `on_behalf_of`; claims from other
+  callers or malformed claims are recorded as `on_behalf_of_rejected` without the claimed value (#62)
+- `request_id` in the access-audit record, taken from `X-Request-Id`, for correlation with proxy access logs (#62)
 
 ### Fixed
 
 ### Changed
 
 - Updated `dicom-rs` dependency to 0.10.0
+- ANSI colors in the log output are disabled when stdout is not a terminal (e.g. in containers), so collected logs stay
+  machine-parseable (#62)
 
 ## [0.3.1] - 2026-09-14
 

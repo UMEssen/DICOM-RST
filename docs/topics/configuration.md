@@ -100,21 +100,139 @@ telemetry:
           <li>TRACE</li>
         </list>
     </def>
-    <def title="telemetry.audit.enabled">
-        Structured access-audit logging (default <code>false</code>).
-        When enabled, every HTTP request emits one self-contained JSON line
-        on stdout: timestamp, caller identity (read from the
-        <code>X-Auth-Request-User</code>/<code>X-Auth-Request-Email</code>
-        headers an authenticating reverse proxy such as oauth2-proxy
-        injects), source IP, method, path, the DICOM coordinates
-        (<code>aet</code>, <code>study</code>, <code>series</code>,
-        <code>instance</code>), response status and duration. Intended for
-        healthcare access-audit requirements; delivery is fail-open
-        (bounded buffer — a slow log consumer never blocks requests, drops
-        are counted and logged). The identity headers are trustworthy only
-        when the proxy is the sole ingress to DICOM-RST.
+    <def title="telemetry.audit" id="telemetry.audit">
+        Structured access-audit logging, disabled by default.
+        See <a href="#access-audit-config">Access Audit Config</a>.
     </def>
 </deflist>
+
+## Access Audit Config {id="access-audit-config"}
+
+%product% performs no authentication itself. When it runs behind an authenticating reverse proxy such as
+<a href="https://oauth2-proxy.github.io/oauth2-proxy/">oauth2-proxy</a>, it can write one access-audit record per
+HTTP request, naming the user the proxy verified and the DICOM resources that were accessed.
+All settings are optional; with <code>enabled: false</code> (the default) nothing changes.
+
+```yaml
+telemetry:
+  audit:
+    enabled: true
+    user-header: X-Forwarded-Email
+    subject-header: X-Forwarded-User
+    trusted-relays: []
+    on-behalf-of-header: X-On-Behalf-Of
+```
+
+<deflist>
+    <def title="telemetry.audit.enabled" id="telemetry.audit.enabled">
+        Enables the access-audit log (default <code>false</code>).
+        Every HTTP request then emits one self-contained JSON line on stdout.
+        Delivery is fail-open: records pass through a bounded buffer, so a slow log consumer never blocks
+        requests; dropped records are counted and logged as warnings.
+    </def>
+    <def title="telemetry.audit.user-header" id="telemetry.audit.user-header">
+        The request header carrying the user verified by the proxy, recorded as <code>user</code>
+        (default <code>X-Forwarded-Email</code>).
+        This is also the identity that <code>trusted-relays</code> is matched against.
+    </def>
+    <def title="telemetry.audit.subject-header" id="telemetry.audit.subject-header">
+        The request header carrying the subject identifier verified by the proxy, recorded as <code>subject</code>
+        (default <code>X-Forwarded-User</code>).
+    </def>
+    <def title="telemetry.audit.trusted-relays" id="telemetry.audit.trusted-relays">
+        Identities, exactly as the proxy asserts them in <code>user-header</code>, that may name the end user they act
+        for (default: empty, nobody may).
+        Use this for services that call %product% with their own credentials on behalf of a signed-in user.
+        Matching is ASCII case-insensitive. Empty entries are rejected at startup.
+    </def>
+    <def title="telemetry.audit.on-behalf-of-header" id="telemetry.audit.on-behalf-of-header">
+        The request header in which a trusted relay names the end user (default <code>X-On-Behalf-Of</code>).
+        It is only read when <code>trusted-relays</code> is not empty, and must differ from
+        <code>user-header</code> and <code>subject-header</code>.
+    </def>
+</deflist>
+
+Header names are validated when the configuration is loaded; an invalid name stops %product% at startup with an
+error naming the offending key.
+
+### Audit Record
+
+```json
+{"audit":"http-access","ts":"2026-08-17T17:16:55Z","user":"jane.doe@example.org","subject":"3f2c9a4e","source":"192.0.2.10","method":"GET","path":"/aets/PACS/studies/1.2.3.4","aet":"PACS","study":"1.2.3.4","status":200,"duration_ms":4886,"request_id":"0f8c2b7e"}
+```
+
+| Field                   | Description                                                                               |
+|-------------------------|-------------------------------------------------------------------------------------------|
+| `audit`                 | Always `http-access`.                                                                     |
+| `ts`                    | Completion time (UTC, RFC 3339, second precision).                                        |
+| `user`, `subject`       | Values of `user-header` and `subject-header`. Omitted if absent or sent more than once.   |
+| `on_behalf_of`          | The end user named by a trusted relay (see below).                                        |
+| `on_behalf_of_rejected` | Why an on-behalf-of header was ignored: `untrusted-caller` or `invalid`.                  |
+| `source`                | First entry of `X-Forwarded-For`.                                                         |
+| `method`, `path`        | Request method, path and query string.                                                    |
+| `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path.                                     |
+| `status`, `duration_ms` | Response status (including `408` for timed-out requests) and duration.                    |
+| `user_agent`            | `User-Agent` header.                                                                      |
+| `request_id`            | `X-Request-Id` header, if sent once with 1 to 128 visible ASCII characters.               |
+
+Absent values are omitted. With auditing enabled, the log line of a completed C-MOVE also carries the
+<code>study_uid</code>.
+
+### Trust Model
+
+The identity fields are only as trustworthy as the proxy in front of %product%:
+
+<warning>
+    <list>
+        <li>The proxy must remove any <code>user-header</code>, <code>subject-header</code> and
+        <code>on-behalf-of-header</code> a client sends and set the identity headers itself from the verified
+        session. oauth2-proxy does this for <code>X-Forwarded-User</code> and <code>X-Forwarded-Email</code> with
+        <code>pass_user_headers</code> (enabled by default). The <code>X-Auth-Request-*</code> headers are response
+        headers in reverse-proxy mode and must not be used.</li>
+        <li>The proxy must be the only way to reach %product%'s HTTP port, for example by binding
+        <code>server.http.interface</code> to <code>127.0.0.1</code> next to a sidecar proxy, or with a firewall or
+        network policy. Anyone who can reach the port directly can send any header.</li>
+    </list>
+</warning>
+
+A relay is trusted because of the identity the proxy verified for it, never because of a header it sends itself.
+An on-behalf-of claim is recorded as <code>on_behalf_of</code> only if the request's <code>user</code> is listed in
+<code>trusted-relays</code>, the header occurs exactly once, and its value is 1 to 320 bytes of UTF-8 without
+whitespace or control characters. Otherwise the record carries <code>on_behalf_of_rejected</code>
+(<code>untrusted-caller</code> or <code>invalid</code>) and the claimed value is not logged.
+The relay is responsible for naming the correct end user; %product% records the claim, it cannot verify it.
+
+### Example: oauth2-proxy
+
+An oauth2-proxy configuration (excerpt) in front of %product%, accepting both interactive users and services that
+present their own bearer token:
+
+```toml
+provider = "oidc"
+oidc_issuer_url = "https://idp.example.org"
+upstreams = ["http://127.0.0.1:8080/"]
+email_domains = ["*"]
+# Default: sets X-Forwarded-User/-Email from the session, replacing client copies
+pass_user_headers = true
+# Lets services call with a bearer token issued by the same provider
+skip_jwt_bearer_tokens = true
+```
+
+For a service, the proxy fills the identity headers from the claims of its token, so with the default
+<code>user-header</code> the relay's token needs an e-mail claim.
+With the matching %product% configuration, requests from <code>viewer@example.org</code> may name the end user in
+<code>X-On-Behalf-Of</code>:
+
+```yaml
+server:
+  http:
+    interface: 127.0.0.1
+telemetry:
+  audit:
+    enabled: true
+    trusted-relays:
+      - viewer@example.org
+```
 
 ## Global Server Config
 
