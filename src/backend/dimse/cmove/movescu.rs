@@ -73,7 +73,9 @@ impl MoveServiceClassUser {
 			match status_type {
 				StatusType::Success => {
 					if let Some(study_uid) = &study_uid {
-						info!(study_uid, "C-MOVE completed successfully");
+						// Debug-formatted: the UID is percent-decoded from the
+						// request URL, so control characters must stay escaped.
+						info!(study_uid = ?study_uid, "C-MOVE completed successfully");
 					} else {
 						info!("C-MOVE completed successfully");
 					}
