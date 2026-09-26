@@ -33,6 +33,10 @@
 //! relays configured (the default) the header is not read at all and
 //! neither field ever appears.
 //!
+//! `request_id` carries the `X-Request-Id` header (1..=128 visible ASCII
+//! characters, sent once) so a record can be correlated with the access log
+//! of the proxy or ingress that set it.
+//!
 //! Delivery is FAIL-OPEN by design: records flow through a bounded channel
 //! to a writer task; when the buffer is full the record is dropped, a
 //! counter increments and a warning is logged — a slow disk or collector
@@ -94,6 +98,9 @@ pub struct AuditRecord {
 	pub duration_ms: u128,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub user_agent: Option<String>,
+	/// `X-Request-Id`, if present and well-formed.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub request_id: Option<String>,
 }
 
 /// Why an on-behalf-of header was not honoured.
@@ -128,6 +135,9 @@ impl Delegation {
 /// Room for the longest e-mail address (64-octet local part, `@`, 255-octet
 /// domain).
 const MAX_END_USER_LEN: usize = 320;
+
+const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
+const MAX_REQUEST_ID_LEN: usize = 128;
 
 /// Cloneable handle to the audit writer. Only exists while auditing is
 /// enabled.
@@ -231,7 +241,7 @@ pub async fn middleware(
 	// a closure borrowing `&Request` held across `next.run().await` makes
 	// the future `!Send` (axum's `Body` is `!Sync`), failing the middleware
 	// `Service` bound with a famously opaque error.
-	let (user, subject, delegation, source, user_agent) = {
+	let (user, subject, delegation, source, user_agent, request_id) = {
 		let headers = request.headers();
 		let get = |name: &str| {
 			headers
@@ -254,6 +264,7 @@ pub async fn middleware(
 					.to_owned()
 			}),
 			get("user-agent"),
+			request_id(headers),
 		)
 	};
 	let method = request.method().to_string();
@@ -281,6 +292,7 @@ pub async fn middleware(
 		status: response.status().as_u16(),
 		duration_ms: started.elapsed().as_millis(),
 		user_agent,
+		request_id,
 	});
 
 	response
@@ -334,6 +346,16 @@ fn end_user(value: &HeaderValue) -> Option<String> {
 			.chars()
 			.any(|ch| ch.is_whitespace() || ch.is_control());
 	well_formed.then(|| value.to_owned())
+}
+
+/// A correlation id: exactly one value of 1..=128 visible ASCII characters.
+fn request_id(headers: &HeaderMap) -> Option<String> {
+	single(headers, &X_REQUEST_ID)
+		.map(HeaderValue::as_bytes)
+		.filter(|id| (1..=MAX_REQUEST_ID_LEN).contains(&id.len()))
+		.filter(|id| id.iter().all(u8::is_ascii_graphic))
+		.and_then(|id| std::str::from_utf8(id).ok())
+		.map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -615,6 +637,43 @@ mod tests {
 		}
 	}
 
+	#[tokio::test]
+	async fn records_well_formed_request_id() {
+		let longest = "f".repeat(MAX_REQUEST_ID_LEN);
+		for id in ["0f8c2b7e-5d1a-4c3b-9e6f-2a1d0c9b8a7e", longest.as_str()] {
+			let request = get_study()
+				.header("x-request-id", id)
+				.body(Body::empty())
+				.expect("request");
+			let record = audit(enabled(), request).await.expect("record");
+			assert_eq!(record.request_id.as_deref(), Some(id));
+		}
+	}
+
+	#[tokio::test]
+	async fn omits_malformed_request_id() {
+		let too_long = "f".repeat(MAX_REQUEST_ID_LEN + 1);
+		let malformed: [&[&[u8]]; 5] = [
+			&[b""],
+			&[too_long.as_bytes()],
+			&[b"abc def"],
+			&["abc\u{e9}".as_bytes()],
+			&[b"abc", b"def"],
+		];
+		for values in malformed {
+			let mut request = get_study();
+			for value in values {
+				request = request.header(
+					"x-request-id",
+					HeaderValue::from_bytes(value).expect("header"),
+				);
+			}
+			let request = request.body(Body::empty()).expect("request");
+			let record = audit(enabled(), request).await.expect("record");
+			assert_eq!(record.request_id, None, "{values:?}");
+		}
+	}
+
 	#[test]
 	fn record_serializes_without_absent_fields() {
 		let record = AuditRecord {
@@ -634,6 +693,7 @@ mod tests {
 			status: 200,
 			duration_ms: 3,
 			user_agent: None,
+			request_id: None,
 		};
 		let json = serde_json::to_string(&record).expect("serialize");
 		assert!(
