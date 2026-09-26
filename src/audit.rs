@@ -4,10 +4,10 @@
 //! one self-contained JSON line on stdout describing WHO accessed WHAT:
 //!
 //! ```json
-//! {"audit":"http-access","ts":"2026-08-17T17:16:55Z","user":"alex@example.com",
-//!  "subject":"5939ae08-…","source":"10.244.9.49","method":"GET",
-//!  "path":"/app/dicom-rst/aets/GEPACS/studies/1.2.840…","aet":"GEPACS",
-//!  "study":"1.2.840…","status":200,"duration_ms":4886}
+//! {"audit":"http-access","ts":"2026-08-17T17:16:55Z","user":"jane.doe@example.org",
+//!  "subject":"3f2c9a4e-…","source":"192.0.2.10","method":"GET",
+//!  "path":"/aets/PACS/studies/1.2.3.4","aet":"PACS",
+//!  "study":"1.2.3.4","status":200,"duration_ms":4886}
 //! ```
 //!
 //! Identity is read from the `X-Auth-Request-User` / `X-Auth-Request-Email`
