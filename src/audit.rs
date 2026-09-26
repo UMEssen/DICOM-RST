@@ -81,12 +81,12 @@ pub struct AuditRecord {
 	/// never recorded: it came from a caller that may not make the claim.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub on_behalf_of_rejected: Option<OnBehalfOfRejection>,
-	/// First `X-Forwarded-For` entry, if present.
+	/// First `X-Forwarded-For` entry, if present (at most 64 bytes).
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub source: Option<String>,
 	pub method: String,
-	/// Full request path and query. QIDO match parameters are part of
-	/// "which data was accessed" and are deliberately included.
+	/// Full request path and query (at most 8 KiB). QIDO match parameters
+	/// are part of "which data was accessed" and are deliberately included.
 	pub path: String,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub aet: Option<String>,
@@ -98,6 +98,7 @@ pub struct AuditRecord {
 	pub instance: Option<String>,
 	pub status: u16,
 	pub duration_ms: u128,
+	/// `User-Agent`, if present (at most 512 bytes).
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub user_agent: Option<String>,
 	/// `X-Request-Id`, if present and well-formed.
@@ -140,6 +141,14 @@ const MAX_IDENTITY_LEN: usize = 320;
 
 const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 const MAX_REQUEST_ID_LEN: usize = 128;
+
+// Caps on values copied from the request as-is, so that one oversized
+// request cannot produce an oversized audit line. Longer values are cut at
+// a character boundary and end in `TRUNCATED`.
+const MAX_PATH_LEN: usize = 8 * 1024;
+const MAX_USER_AGENT_LEN: usize = 512;
+const MAX_SOURCE_LEN: usize = 64;
+const TRUNCATED: &str = "…";
 
 /// Cloneable handle to the audit writer. Only exists while auditing is
 /// enabled.
@@ -258,19 +267,15 @@ pub async fn middleware(
 			identity(headers, &sink.config.subject_header),
 			delegation,
 			get("x-forwarded-for").map(|forwarded| {
-				forwarded
-					.split(',')
-					.next()
-					.unwrap_or_default()
-					.trim()
-					.to_owned()
+				let first = forwarded.split(',').next().unwrap_or_default();
+				bounded(first.trim().to_owned(), MAX_SOURCE_LEN)
 			}),
-			get("user-agent"),
+			get("user-agent").map(|user_agent| bounded(user_agent, MAX_USER_AGENT_LEN)),
 			request_id(headers),
 		)
 	};
 	let method = request.method().to_string();
-	let path = request.uri().to_string();
+	let path = bounded(request.uri().to_string(), MAX_PATH_LEN);
 
 	let (on_behalf_of, on_behalf_of_rejected) = delegation.into_fields();
 
@@ -298,6 +303,20 @@ pub async fn middleware(
 	});
 
 	response
+}
+
+/// `value` cut to at most `max` bytes at a character boundary, followed by
+/// [`TRUNCATED`] if anything was cut.
+fn bounded(mut value: String, max: usize) -> String {
+	if value.len() > max {
+		let mut end = max;
+		while !value.is_char_boundary(end) {
+			end -= 1;
+		}
+		value.truncate(end);
+		value.push_str(TRUNCATED);
+	}
+	value
 }
 
 /// The value of `name`, if the header occurs exactly once: a repeated header
@@ -747,6 +766,53 @@ mod tests {
 			let record = audit(enabled(), request).await.expect("record");
 			assert_eq!(record.request_id, None, "{values:?}");
 		}
+	}
+
+	#[test]
+	fn bounded_cuts_at_a_character_boundary() {
+		assert_eq!(bounded("abc".to_owned(), 3), "abc");
+		assert_eq!(bounded("abcd".to_owned(), 3), "abc…");
+		// "ü" is two bytes: cutting at 2 would split it.
+		assert_eq!(bounded("aüb".to_owned(), 2), "a…");
+		assert_eq!(bounded("aüb".to_owned(), 3), "aü…");
+	}
+
+	#[tokio::test]
+	async fn copied_request_values_are_bounded() {
+		let long_study = "1".repeat(MAX_PATH_LEN);
+		let long_agent = "a".repeat(MAX_USER_AGENT_LEN + 1);
+		let long_source = format!("{}, 192.0.2.10", "f".repeat(MAX_SOURCE_LEN + 1));
+		let request = Request::get(format!("/aets/PACS/studies/{long_study}"))
+			.header("user-agent", long_agent.as_str())
+			.header("x-forwarded-for", long_source.as_str())
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+
+		let path_prefix = format!("/aets/PACS/studies/{long_study}");
+		assert_eq!(
+			record.path,
+			format!("{}{TRUNCATED}", &path_prefix[..MAX_PATH_LEN])
+		);
+		assert_eq!(
+			record.user_agent,
+			Some(format!("{}{TRUNCATED}", &long_agent[..MAX_USER_AGENT_LEN]))
+		);
+		assert_eq!(
+			record.source,
+			Some(format!("{}{TRUNCATED}", "f".repeat(MAX_SOURCE_LEN)))
+		);
+
+		let at_cap = "a".repeat(MAX_USER_AGENT_LEN);
+		let request = get_study()
+			.header("user-agent", at_cap.as_str())
+			.header("x-forwarded-for", "192.0.2.10, 198.51.100.7")
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+		assert_eq!(record.user_agent, Some(at_cap));
+		assert_eq!(record.source.as_deref(), Some("192.0.2.10"));
+		assert_eq!(record.path, "/aets/PACS/studies/1.2.3.4");
 	}
 
 	#[test]

@@ -169,14 +169,14 @@ error naming the offending key.
 | `user`, `subject`       | Values of `user-header` and `subject-header`: 1 to 320 bytes of UTF-8 without control characters. Omitted if absent, sent more than once or malformed (never truncated). |
 | `on_behalf_of`          | The end user named by a trusted relay (see below).                                        |
 | `on_behalf_of_rejected` | Why an on-behalf-of header was ignored: `untrusted-caller` or `invalid`.                  |
-| `source`                | First entry of `X-Forwarded-For`.                                                         |
-| `method`, `path`        | Request method, path and query string.                                                    |
+| `source`                | First entry of `X-Forwarded-For`, at most 64 bytes.                                       |
+| `method`, `path`        | Request method, and path with query string (at most 8 KiB).                               |
 | `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path.                                     |
 | `status`, `duration_ms` | Response status (including `408` for timed-out requests) and duration.                    |
-| `user_agent`            | `User-Agent` header.                                                                      |
+| `user_agent`            | `User-Agent` header, at most 512 bytes.                                                   |
 | `request_id`            | `X-Request-Id` header, if sent once with 1 to 128 visible ASCII characters.               |
 
-Absent values are omitted. With auditing enabled, the log line of a completed C-MOVE also carries the
+Absent values are omitted. Values longer than their limit are cut at a character boundary and end in `…`. With auditing enabled, the log line of a completed C-MOVE also carries the
 <code>study_uid</code>.
 
 ### Trust Model
