@@ -18,8 +18,10 @@
 //! client sent. DICOM-RST itself performs no authentication (see #15/#42):
 //! these fields are TRUSTWORTHY ONLY when the proxy strips client-supplied
 //! copies and is the sole ingress. A header that occurs more than once is
-//! ambiguous and treated as absent. The record is emitted regardless — an
-//! absent identity is itself audit-relevant.
+//! ambiguous and treated as absent, as is a value that is not 1..=320 bytes
+//! of UTF-8 without control characters (never truncated: a shortened
+//! identity could equal someone else's). The record is emitted regardless —
+//! an absent identity is itself audit-relevant.
 //!
 //! A caller that acts for someone else (e.g. a backend service fetching
 //! images for a signed-in user) can name that end user in the header set by
@@ -132,9 +134,9 @@ impl Delegation {
 	}
 }
 
-/// Room for the longest e-mail address (64-octet local part, `@`, 255-octet
-/// domain).
-const MAX_END_USER_LEN: usize = 320;
+/// Longest accepted identity: room for the longest e-mail address
+/// (64-octet local part, `@`, 255-octet domain).
+const MAX_IDENTITY_LEN: usize = 320;
 
 const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 const MAX_REQUEST_ID_LEN: usize = 128;
@@ -306,12 +308,22 @@ fn single<'h>(headers: &'h HeaderMap, name: &HeaderName) -> Option<&'h HeaderVal
 	values.next().is_none().then_some(value)
 }
 
-/// A proxy-asserted identity: exactly one non-empty, visible-ASCII value.
+/// A proxy-asserted identity: the header occurs exactly once and its value
+/// is an [`identity_value`].
 fn identity(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
 	single(headers, name)
-		.and_then(|value| value.to_str().ok())
-		.filter(|value| !value.is_empty())
+		.and_then(identity_value)
 		.map(str::to_owned)
+}
+
+/// 1..=320 bytes of UTF-8 without control characters. Anything else is
+/// rejected as a whole, never truncated: a shortened identity could equal
+/// someone else's.
+fn identity_value(value: &HeaderValue) -> Option<&str> {
+	let value = std::str::from_utf8(value.as_bytes()).ok()?;
+	let well_formed =
+		(1..=MAX_IDENTITY_LEN).contains(&value.len()) && !value.chars().any(char::is_control);
+	well_formed.then_some(value)
 }
 
 /// Decides whether `caller` (the verified `user`) may name the end user it
@@ -337,15 +349,12 @@ fn delegation_for(config: &AuditConfig, headers: &HeaderMap, caller: Option<&str
 	)
 }
 
-/// An end-user identity as named by a trusted relay: 1..=320 bytes of UTF-8
-/// without whitespace or control characters.
+/// An end-user identity as named by a trusted relay: an [`identity_value`]
+/// that also contains no whitespace.
 fn end_user(value: &HeaderValue) -> Option<String> {
-	let value = std::str::from_utf8(value.as_bytes()).ok()?;
-	let well_formed = (1..=MAX_END_USER_LEN).contains(&value.len())
-		&& !value
-			.chars()
-			.any(|ch| ch.is_whitespace() || ch.is_control());
-	well_formed.then(|| value.to_owned())
+	identity_value(value)
+		.filter(|value| !value.chars().any(char::is_whitespace))
+		.map(str::to_owned)
 }
 
 /// A correlation id: exactly one value of 1..=128 visible ASCII characters.
@@ -456,6 +465,54 @@ mod tests {
 			.expect("request");
 		let record = audit(config, request).await.expect("record");
 		assert_eq!(record.user.as_deref(), Some("jdoe"));
+	}
+
+	#[tokio::test]
+	async fn records_utf8_identity() {
+		let request = get_study()
+			.header(
+				"x-forwarded-email",
+				HeaderValue::from_bytes("jürgen.müller@example.org".as_bytes()).expect("header"),
+			)
+			.header(
+				"x-forwarded-user",
+				HeaderValue::from_bytes("Jürgen Müller".as_bytes()).expect("header"),
+			)
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some("jürgen.müller@example.org"));
+		assert_eq!(record.subject.as_deref(), Some("Jürgen Müller"));
+	}
+
+	#[tokio::test]
+	async fn malformed_identity_is_absent_not_truncated() {
+		let longest = "a".repeat(MAX_IDENTITY_LEN);
+		let request = get_study()
+			.header("x-forwarded-email", longest.as_str())
+			.body(Body::empty())
+			.expect("request");
+		let record = audit(enabled(), request).await.expect("record");
+		assert_eq!(record.user.as_deref(), Some(longest.as_str()));
+
+		let too_long = "a".repeat(MAX_IDENTITY_LEN + 1);
+		let malformed: [&[u8]; 4] = [
+			b"",
+			too_long.as_bytes(),
+			b"jane\tdoe@example.org",
+			b"jane\xFFdoe@example.org",
+		];
+		for value in malformed {
+			let request = get_study()
+				.header(
+					"x-forwarded-email",
+					HeaderValue::from_bytes(value).expect("header"),
+				)
+				.body(Body::empty())
+				.expect("request");
+			let record = audit(enabled(), request).await.expect("record");
+			assert_eq!(record.user, None, "{value:?}");
+		}
 	}
 
 	#[tokio::test]
@@ -615,8 +672,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn malformed_on_behalf_of_values_are_invalid() {
-		let longest = "a".repeat(MAX_END_USER_LEN);
-		let too_long = "a".repeat(MAX_END_USER_LEN + 1);
+		let longest = "a".repeat(MAX_IDENTITY_LEN);
+		let too_long = "a".repeat(MAX_IDENTITY_LEN + 1);
 		let malformed: [&[u8]; 6] = [
 			b"",
 			too_long.as_bytes(),

@@ -165,7 +165,7 @@ error naming the offending key.
 |-------------------------|-------------------------------------------------------------------------------------------|
 | `audit`                 | Always `http-access`.                                                                     |
 | `ts`                    | Completion time (UTC, RFC 3339, second precision).                                        |
-| `user`, `subject`       | Values of `user-header` and `subject-header`. Omitted if absent or sent more than once.   |
+| `user`, `subject`       | Values of `user-header` and `subject-header`: 1 to 320 bytes of UTF-8 without control characters. Omitted if absent, sent more than once or malformed (never truncated). |
 | `on_behalf_of`          | The end user named by a trusted relay (see below).                                        |
 | `on_behalf_of_rejected` | Why an on-behalf-of header was ignored: `untrusted-caller` or `invalid`.                  |
 | `source`                | First entry of `X-Forwarded-For`.                                                         |
