@@ -43,8 +43,9 @@
 //! space, sent once): both are client-asserted unless the proxy chain
 //! overwrites them. `request_id` lets a record be correlated with the
 //! access log of the proxy or ingress that set it. `path` (8 KiB),
-//! `user_agent` (512 bytes) and `source` (64 bytes) are capped and end in
-//! `…` when cut. If a path parameter cannot be decoded, the record carries
+//! `user_agent` (512 bytes), `source` (64 bytes) and each DICOM coordinate
+//! (256 bytes) are capped; a cut value ends in `…` and, marker included,
+//! stays within its cap. If a path parameter cannot be decoded, the record carries
 //! no DICOM coordinates at all; `path` is still recorded.
 //!
 //! `status` and `duration_ms` are taken when the response head is produced,
@@ -100,12 +101,14 @@ pub struct AuditRecord {
 	/// never recorded: it came from a caller that may not make the claim.
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub on_behalf_of_rejected: Option<OnBehalfOfRejection>,
-	/// First `X-Forwarded-For` entry, if present (at most 64 bytes).
+	/// First `X-Forwarded-For` entry, if present (at most 64 bytes, marker
+	/// included).
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub source: Option<String>,
 	pub method: String,
-	/// Full request path and query (at most 8 KiB). QIDO match parameters
-	/// are part of "which data was accessed" and are deliberately included.
+	/// Full request path and query (at most 8 KiB, marker included). QIDO
+	/// match parameters are part of "which data was accessed" and are
+	/// deliberately included.
 	pub path: String,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub aet: Option<String>,
@@ -117,7 +120,7 @@ pub struct AuditRecord {
 	pub instance: Option<String>,
 	pub status: u16,
 	pub duration_ms: u128,
-	/// `User-Agent`, if present (at most 512 bytes).
+	/// `User-Agent`, if present (at most 512 bytes, marker included).
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub user_agent: Option<String>,
 	/// `X-Request-Id`, if sent once as 1..=128 printable ASCII characters
@@ -164,10 +167,14 @@ const MAX_REQUEST_ID_LEN: usize = 128;
 
 // Caps on values copied from the request as-is, so that one oversized
 // request cannot produce an oversized audit line. Longer values are cut at
-// a character boundary and end in `TRUNCATED`.
+// a character boundary and end in `TRUNCATED`, the marker included in the
+// cap.
 const MAX_PATH_LEN: usize = 8 * 1024;
 const MAX_USER_AGENT_LEN: usize = 512;
 const MAX_SOURCE_LEN: usize = 64;
+/// Per DICOM coordinate (`aet`, `study`, `series`, `instance`): far above
+/// any valid AE title (16) or UID (64), so only garbage is ever cut.
+const MAX_COORDINATE_LEN: usize = 256;
 const TRUNCATED: &str = "…";
 
 /// Cloneable handle to the audit writer. Only exists while auditing is
@@ -295,10 +302,10 @@ pub async fn middleware(
 	let mut instance = None;
 	for (name, value) in params.iter().flatten() {
 		match name {
-			"aet" => aet = Some(value.to_owned()),
-			"study" => study = Some(value.to_owned()),
-			"series" => series = Some(value.to_owned()),
-			"instance" => instance = Some(value.to_owned()),
+			"aet" => aet = Some(bounded(value.to_owned(), MAX_COORDINATE_LEN)),
+			"study" => study = Some(bounded(value.to_owned(), MAX_COORDINATE_LEN)),
+			"series" => series = Some(bounded(value.to_owned(), MAX_COORDINATE_LEN)),
+			"instance" => instance = Some(bounded(value.to_owned(), MAX_COORDINATE_LEN)),
 			_ => {}
 		}
 	}
@@ -360,11 +367,12 @@ pub async fn middleware(
 	response
 }
 
-/// `value` cut to at most `max` bytes at a character boundary, followed by
-/// [`TRUNCATED`] if anything was cut.
+/// `value` if it fits in `max` bytes; otherwise cut at a character boundary
+/// and followed by [`TRUNCATED`], the whole at most `max` bytes (every cap
+/// here is far larger than the marker).
 fn bounded(mut value: String, max: usize) -> String {
 	if value.len() > max {
-		let mut end = max;
+		let mut end = max.saturating_sub(TRUNCATED.len());
 		while !value.is_char_boundary(end) {
 			end -= 1;
 		}
@@ -967,11 +975,22 @@ mod tests {
 
 	#[test]
 	fn bounded_cuts_at_a_character_boundary() {
-		assert_eq!(bounded("abc".to_owned(), 3), "abc");
-		assert_eq!(bounded("abcd".to_owned(), 3), "abc…");
+		assert_eq!(bounded("abcde".to_owned(), 5), "abcde");
+		// The 3-byte marker counts against the cap.
+		assert_eq!(bounded("abcdef".to_owned(), 5), "ab…");
 		// "ü" is two bytes: cutting at 2 would split it.
-		assert_eq!(bounded("aüb".to_owned(), 2), "a…");
-		assert_eq!(bounded("aüb".to_owned(), 3), "aü…");
+		assert_eq!(bounded("aüüb".to_owned(), 5), "a…");
+		assert_eq!(bounded("aüüb".to_owned(), 6), "aüüb");
+	}
+
+	#[test]
+	fn bounded_never_exceeds_its_cap() {
+		let value = "aüß€x".repeat(10);
+		for max in TRUNCATED.len()..value.len() {
+			let cut = bounded(value.clone(), max);
+			assert!(cut.len() <= max, "{max}: {} bytes", cut.len());
+			assert!(cut.ends_with(TRUNCATED), "{max}: {cut}");
+		}
 	}
 
 	#[tokio::test]
@@ -987,17 +1006,30 @@ mod tests {
 		let record = audit(enabled(), request).await.expect("record");
 
 		let path_prefix = format!("/aets/PACS/studies/{long_study}");
+		let keep = |max: usize| max - TRUNCATED.len();
 		assert_eq!(
 			record.path,
-			format!("{}{TRUNCATED}", &path_prefix[..MAX_PATH_LEN])
+			format!("{}{TRUNCATED}", &path_prefix[..keep(MAX_PATH_LEN)])
 		);
+		assert_eq!(record.path.len(), MAX_PATH_LEN);
+		assert_eq!(
+			record.study,
+			Some(format!(
+				"{}{TRUNCATED}",
+				&long_study[..keep(MAX_COORDINATE_LEN)]
+			))
+		);
+		assert_eq!(record.aet.as_deref(), Some("PACS"));
 		assert_eq!(
 			record.user_agent,
-			Some(format!("{}{TRUNCATED}", &long_agent[..MAX_USER_AGENT_LEN]))
+			Some(format!(
+				"{}{TRUNCATED}",
+				&long_agent[..keep(MAX_USER_AGENT_LEN)]
+			))
 		);
 		assert_eq!(
 			record.source,
-			Some(format!("{}{TRUNCATED}", "f".repeat(MAX_SOURCE_LEN)))
+			Some(format!("{}{TRUNCATED}", "f".repeat(keep(MAX_SOURCE_LEN))))
 		);
 
 		let at_cap = "a".repeat(MAX_USER_AGENT_LEN);

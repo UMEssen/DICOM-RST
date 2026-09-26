@@ -156,8 +156,10 @@ telemetry:
 </deflist>
 
 Header names are validated when the configuration is loaded; an invalid name, or a header that carries credentials
-(<code>Authorization</code>, <code>Proxy-Authorization</code>, <code>Cookie</code>), stops %product% at startup with an
-error naming the offending key.
+(<code>Authorization</code>, <code>Proxy-Authorization</code>, <code>Cookie</code>,
+<code>X-Forwarded-Access-Token</code>), stops %product% at startup with an error naming the offending key. The credential
+check is a guard against an obvious misconfiguration, not an exhaustive list: never point an identity header at a header
+that carries a secret.
 
 ### Audit Record
 
@@ -174,12 +176,13 @@ error naming the offending key.
 | `on_behalf_of_rejected` | Why an on-behalf-of header was ignored: `untrusted-caller` or `invalid`.                  |
 | `source`                | Leftmost entry of `X-Forwarded-For`, at most 64 bytes.                                    |
 | `method`, `path`        | Request method, and path with query string (at most 8 KiB).                               |
-| `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path. If any path parameter cannot be decoded, all four are omitted; `path` is still recorded. |
+| `aet`, `study`, `series`, `instance` | DICOM coordinates from the request path, at most 256 bytes each. If any path parameter cannot be decoded, all four are omitted; `path` is still recorded. |
 | `status`, `duration_ms` | Status and elapsed time when the response head was produced, including `408` for timed-out requests. |
 | `user_agent`            | `User-Agent` header, at most 512 bytes.                                                   |
 | `request_id`            | `X-Request-Id` header, if sent once with 1 to 128 printable ASCII characters (no spaces). |
 
-Absent values are omitted. Values longer than their limit are cut at a character boundary and end in `…`.
+Absent values are omitted. Values longer than their limit are cut at a character boundary and end in `…`; the limits
+include the marker.
 With auditing enabled, the log line of a completed C-MOVE also carries the <code>study_uid</code>.
 
 What the record does and does not show:
