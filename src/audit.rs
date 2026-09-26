@@ -35,6 +35,7 @@ use axum::extract::{RawPathParams, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use axum::middleware::Next;
 use axum::response::Response;
+use axum::RequestExt;
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -76,11 +77,11 @@ pub struct AuditRecord {
 	pub user_agent: Option<String>,
 }
 
-/// Cloneable handle to the audit writer. `None` inside means auditing is
-/// disabled and the middleware is a no-op.
+/// Cloneable handle to the audit writer. Only exists while auditing is
+/// enabled.
 #[derive(Clone)]
 pub struct AuditSink {
-	tx: Option<mpsc::Sender<AuditRecord>>,
+	tx: mpsc::Sender<AuditRecord>,
 	config: Arc<AuditConfig>,
 }
 
@@ -90,11 +91,13 @@ static DROPPED: AtomicU64 = AtomicU64::new(0);
 const BUFFER: usize = 1024;
 
 impl AuditSink {
-	/// Create the sink and, when enabled, spawn the stdout writer task.
-	pub fn new(config: &AuditConfig) -> Self {
-		let config = Arc::new(config.clone());
+	/// Spawn the stdout writer task and return its handle, or `None` when
+	/// auditing is disabled. Without a sink the middleware must not be
+	/// installed at all, so the request path is exactly that of a build
+	/// without auditing.
+	pub fn new(config: &AuditConfig) -> Option<Self> {
 		if !config.enabled {
-			return Self { tx: None, config };
+			return None;
 		}
 		let (tx, mut rx) = mpsc::channel::<AuditRecord>(BUFFER);
 		tokio::spawn(async move {
@@ -111,10 +114,10 @@ impl AuditSink {
 				}
 			}
 		});
-		Self {
-			tx: Some(tx),
-			config,
-		}
+		Some(Self {
+			tx,
+			config: Arc::new(config.clone()),
+		})
 	}
 
 	/// An enabled sink whose records are handed to the caller instead of
@@ -123,15 +126,14 @@ impl AuditSink {
 	fn with_receiver(config: AuditConfig) -> (Self, mpsc::Receiver<AuditRecord>) {
 		let (tx, rx) = mpsc::channel(BUFFER);
 		let sink = Self {
-			tx: Some(tx),
+			tx,
 			config: Arc::new(config),
 		};
 		(sink, rx)
 	}
 
 	fn emit(&self, record: AuditRecord) {
-		let Some(tx) = &self.tx else { return };
-		if tx.try_send(record).is_err() {
+		if self.tx.try_send(record).is_err() {
 			let dropped = DROPPED.fetch_add(1, Ordering::Relaxed) + 1;
 			// Every drop is a warning-worthy event, but do not spam a
 			// saturated system: log the first and then every 100th.
@@ -147,21 +149,23 @@ impl AuditSink {
 /// Attach with `axum::middleware::from_fn_with_state(sink, audit::middleware)`
 /// OUTSIDE the timeout layer, so timed-out requests are recorded with their
 /// 408 as well.
+///
+/// The middleware only observes: it never answers a request itself. Path
+/// parameters are therefore read without a rejecting extractor — a request
+/// whose parameters cannot be decoded is passed on unchanged and still
+/// audited, just without the DICOM coordinates.
 pub async fn middleware(
 	State(sink): State<AuditSink>,
-	params: RawPathParams,
-	request: Request,
+	mut request: Request,
 	next: Next,
 ) -> Response {
-	if sink.tx.is_none() {
-		return next.run(request).await;
-	}
+	let params = request.extract_parts::<RawPathParams>().await.ok();
 
 	let mut aet = None;
 	let mut study = None;
 	let mut series = None;
 	let mut instance = None;
-	for (name, value) in &params {
+	for (name, value) in params.iter().flatten() {
 		match name {
 			"aet" => aet = Some(value.to_owned()),
 			"study" => study = Some(value.to_owned()),
@@ -254,13 +258,15 @@ mod tests {
 		}
 	}
 
+	fn app() -> Router {
+		Router::new().route("/aets/{aet}/studies/{study}", get(|| async { "ok" }))
+	}
+
 	/// Sends one request through a router carrying the audit middleware and
 	/// returns the record it produced, if any.
 	async fn audit(config: AuditConfig, request: Request) -> Option<AuditRecord> {
 		let (sink, mut rx) = AuditSink::with_receiver(config);
-		let app = Router::new()
-			.route("/aets/{aet}/studies/{study}", get(|| async { "ok" }))
-			.layer(axum::middleware::from_fn_with_state(sink, middleware));
+		let app = app().layer(axum::middleware::from_fn_with_state(sink, middleware));
 		let response = app.oneshot(request).await.expect("infallible");
 		assert_eq!(response.status(), 200);
 		rx.try_recv().ok()
@@ -325,10 +331,26 @@ mod tests {
 		assert_eq!(record.user, None);
 	}
 
+	#[test]
+	fn disabled_audit_has_no_sink() {
+		// No sink means no writer task and no middleware: nothing is emitted.
+		assert!(AuditSink::new(&AuditConfig::default()).is_none());
+	}
+
 	#[tokio::test]
-	async fn disabled_sink_emits_nothing() {
-		let sink = AuditSink::new(&AuditConfig::default());
-		assert!(sink.tx.is_none(), "no writer task when disabled");
+	async fn undecodable_path_parameter_passes_through_and_is_audited() {
+		let request = || {
+			Request::get("/aets/%FF/studies/1.2.3.4")
+				.body(Body::empty())
+				.expect("request")
+		};
+		let unaudited = app().oneshot(request()).await.expect("infallible");
+		assert_eq!(unaudited.status(), 200);
+
+		let record = audit(enabled(), request()).await.expect("record");
+		assert_eq!(record.status, 200);
+		assert_eq!(record.aet, None);
+		assert_eq!(record.study, None);
 	}
 
 	#[test]

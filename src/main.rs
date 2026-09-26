@@ -143,8 +143,6 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		});
 	}
 
-	let audit_sink = audit::AuditSink::new(&config.telemetry.audit);
-
 	let app = api::routes(&config.server.http.base_path)
 		.layer(CorsLayer::permissive())
 		.layer(axum::middleware::from_fn(add_common_headers))
@@ -158,14 +156,17 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		.layer(TimeoutLayer::with_status_code(
 			StatusCode::REQUEST_TIMEOUT,
 			Duration::from_secs(config.server.http.request_timeout),
-		))
-		// Outside the timeout layer, so timed-out requests are audited
-		// with their 408 as well. No-op unless telemetry.audit.enabled.
-		.layer(axum::middleware::from_fn_with_state(
-			audit_sink,
+		));
+	// Outside the timeout layer, so timed-out requests are audited with
+	// their 408 as well. Not installed at all unless telemetry.audit.enabled.
+	let app = match audit::AuditSink::new(&config.telemetry.audit) {
+		Some(sink) => app.layer(axum::middleware::from_fn_with_state(
+			sink,
 			audit::middleware,
-		))
-		.with_state(app_state);
+		)),
+		None => app,
+	}
+	.with_state(app_state);
 
 	let app = NormalizePathLayer::trim_trailing_slash().layer(app);
 	let service = ServiceExt::<Request>::into_make_service(app);
