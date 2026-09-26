@@ -30,6 +30,7 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace;
 use tracing::{error, info, level_filters::LevelFilter, Level};
+use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -51,7 +52,15 @@ pub const DEFAULT_AET: &str = "DICOM-RST";
 /// How long to wait after shutdown for buffered audit records to be written.
 const AUDIT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn init_logger(level: tracing::Level) {
+fn init_logger(level: tracing::Level, escape_line_breaks: bool) {
+	// With auditing on, the log shares stdout with the audit records, so a
+	// message must never span lines (see `audit::LineSafeStdout`). Otherwise
+	// the default writer, i.e. unchanged output.
+	let writer = if escape_line_breaks {
+		BoxMakeWriter::new(audit::LineSafeStdout)
+	} else {
+		BoxMakeWriter::new(std::io::stdout)
+	};
 	tracing_subscriber::registry()
 		.with(
 			tracing_subscriber::fmt::layer()
@@ -64,7 +73,8 @@ fn init_logger(level: tracing::Level) {
 				))
 				.with_file(false)
 				.with_line_number(false)
-				.with_target(false),
+				.with_target(false)
+				.with_writer(writer),
 		)
 		.with(
 			EnvFilter::builder()
@@ -109,7 +119,7 @@ fn init_sentry(config: &AppConfig) -> sentry::ClientInitGuard {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let config = AppConfig::new()?;
-	init_logger(config.telemetry.level);
+	init_logger(config.telemetry.level, config.telemetry.audit.enabled);
 
 	// Manually create the Tokio runtime because the Sentry client needs to be created *before* the
 	// Tokio runtime, which prevents us from using the #[tokio::main] macro.

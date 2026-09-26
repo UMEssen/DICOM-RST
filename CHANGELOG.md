@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `telemetry.audit.subject-header`, default `X-Forwarded-Email` and `X-Forwarded-User`), source address, method,
   path, DICOM coordinates, status and duration. With auditing enabled, the C-MOVE completion log line also carries the
   Study Instance UID (#62)
+- With auditing enabled, line breaks inside a regular log message are escaped, so request data carried by a log message
+  cannot forge a line on the stdout stream that also carries the audit records (#62)
 - Trusted relays for the access-audit log (`telemetry.audit.trusted-relays`, `telemetry.audit.on-behalf-of-header`):
   explicitly trusted callers can name the end user they act for, recorded as `on_behalf_of` next to the caller's own
   identity (a recorded claim, never used for authorization); claims from other callers or malformed claims are

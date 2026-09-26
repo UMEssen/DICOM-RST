@@ -177,6 +177,52 @@ const MAX_SOURCE_LEN: usize = 64;
 const MAX_COORDINATE_LEN: usize = 256;
 const TRUNCATED: &str = "…";
 
+/// The human-readable log's writer while auditing is enabled: stdout, with
+/// every line break inside one formatted log event escaped (`\n`, `\r`).
+///
+/// Audit records and the regular log share stdout, and a log message may
+/// carry request data (a percent-decoded path segment can hold a newline).
+/// Unescaped, such a message could start a line of its own that looks like
+/// an audit record. The formatter writes each event with one `write_all`,
+/// so only its final line break is kept. Not used while auditing is
+/// disabled, which leaves the log output unchanged.
+pub struct LineSafeStdout;
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LineSafeStdout {
+	type Writer = LineSafe<std::io::Stdout>;
+
+	fn make_writer(&'a self) -> Self::Writer {
+		LineSafe(std::io::stdout())
+	}
+}
+
+/// See [`LineSafeStdout`].
+pub struct LineSafe<W>(pub W);
+
+impl<W: Write> Write for LineSafe<W> {
+	fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+		let (body, end): (&[u8], &[u8]) = match buf.split_last() {
+			Some((b'\n', body)) => (body, b"\n"),
+			_ => (buf, b""),
+		};
+		let mut escaped = Vec::with_capacity(buf.len() + 8);
+		for &byte in body {
+			match byte {
+				b'\n' => escaped.extend_from_slice(br"\n"),
+				b'\r' => escaped.extend_from_slice(br"\r"),
+				other => escaped.push(other),
+			}
+		}
+		escaped.extend_from_slice(end);
+		self.0.write_all(&escaped)?;
+		Ok(buf.len())
+	}
+
+	fn flush(&mut self) -> std::io::Result<()> {
+		self.0.flush()
+	}
+}
+
 /// Cloneable handle to the audit writer. Only exists while auditing is
 /// enabled.
 #[derive(Clone)]
@@ -971,6 +1017,66 @@ mod tests {
 			let record = audit(enabled(), request).await.expect("record");
 			assert_eq!(record.request_id, None, "{values:?}");
 		}
+	}
+
+	#[test]
+	fn line_safe_keeps_one_event_on_one_line() {
+		// Interior line breaks are escaped; the event's final one is kept.
+		let cases: [(&[u8], &[u8]); 5] = [
+			(b"plain\n", b"plain\n"),
+			(b"a\nb\n", b"a\\nb\n"),
+			(b"a\r\nb", b"a\\r\\nb"),
+			(b"\n", b"\n"),
+			(b"", b""),
+		];
+		for (input, expected) in cases {
+			let mut out = LineSafe(Vec::new());
+			let written = out.write(input).expect("write");
+			assert_eq!(written, input.len());
+			assert_eq!(
+				out.0,
+				expected,
+				"{:?} -> {:?}",
+				String::from_utf8_lossy(input),
+				String::from_utf8_lossy(&out.0)
+			);
+		}
+	}
+
+	#[test]
+	fn a_log_message_cannot_forge_an_audit_line() {
+		#[derive(Clone, Default)]
+		struct Shared(Arc<std::sync::Mutex<Vec<u8>>>);
+		impl Write for Shared {
+			fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+				self.0.lock().expect("lock").extend_from_slice(buf);
+				Ok(buf.len())
+			}
+			fn flush(&mut self) -> std::io::Result<()> {
+				Ok(())
+			}
+		}
+		let sink = Shared::default();
+		let make = {
+			let sink = sink.clone();
+			move || LineSafe(sink.clone())
+		};
+		let subscriber = tracing_subscriber::fmt()
+			.compact()
+			.with_ansi(false)
+			.with_writer(make)
+			.finish();
+		let forged = "1.2.3\n{\"audit\":\"http-access\",\"user\":\"someone@example.org\"}";
+		tracing::subscriber::with_default(subscriber, || {
+			tracing::info!("Requesting {} from S3", forged);
+		});
+		let output = String::from_utf8(sink.0.lock().expect("lock").clone()).expect("utf-8");
+		assert_eq!(output.lines().count(), 1, "{output}");
+		assert!(
+			!output.lines().any(|line| line.starts_with('{')),
+			"{output}"
+		);
+		assert!(output.ends_with('\n'), "{output}");
 	}
 
 	#[test]
