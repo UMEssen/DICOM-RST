@@ -1,7 +1,7 @@
 use crate::types::AE;
 use crate::DEFAULT_AET;
 
-use axum::http::HeaderName;
+use axum::http::{header, HeaderName};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
 use std::net::IpAddr;
@@ -448,6 +448,8 @@ struct RawAuditConfig {
 pub enum AuditConfigError {
 	#[error("telemetry.audit.{key}: {value:?} is not a valid HTTP header name")]
 	InvalidHeaderName { key: &'static str, value: String },
+	#[error("telemetry.audit.{key}: {name} carries credentials and must not be recorded")]
+	CredentialHeader { key: &'static str, name: HeaderName },
 	#[error("telemetry.audit.trusted-relays: entries must not be empty")]
 	EmptyTrustedRelay,
 	#[error("telemetry.audit.on-behalf-of-header must differ from user-header and subject-header")]
@@ -487,6 +489,14 @@ impl TryFrom<RawAuditConfig> for AuditConfig {
 	}
 }
 
+/// Headers whose values are secrets: recording them would put credentials
+/// into the audit log.
+const CREDENTIAL_HEADERS: [HeaderName; 3] = [
+	header::AUTHORIZATION,
+	header::PROXY_AUTHORIZATION,
+	header::COOKIE,
+];
+
 fn parse_header_name(
 	key: &'static str,
 	value: Option<String>,
@@ -495,8 +505,13 @@ fn parse_header_name(
 	let Some(value) = value else {
 		return Ok(default);
 	};
-	HeaderName::from_bytes(value.as_bytes())
-		.map_err(|_| AuditConfigError::InvalidHeaderName { key, value })
+	// `HeaderName` is lowercase, so the comparison is case-insensitive.
+	let name = HeaderName::from_bytes(value.as_bytes())
+		.map_err(|_| AuditConfigError::InvalidHeaderName { key, value })?;
+	if CREDENTIAL_HEADERS.contains(&name) {
+		return Err(AuditConfigError::CredentialHeader { key, name });
+	}
+	Ok(name)
 }
 
 /// Deserializer for [`tracing::Level`] as it does not implement [Deserialize]
@@ -566,6 +581,22 @@ mod tests {
 		let yaml = "telemetry:\n  level: INFO\n  audit:\n    trusted-relays:\n      - \"  \"\n";
 		let error = load(yaml).expect_err("empty relay must be rejected");
 		assert!(error.to_string().contains("trusted-relays"), "{error}");
+	}
+
+	#[test]
+	fn credential_headers_are_a_load_error() {
+		for key in ["user-header", "subject-header", "on-behalf-of-header"] {
+			for name in ["Authorization", "proxy-authorization", "COOKIE"] {
+				let yaml = format!("telemetry:\n  level: INFO\n  audit:\n    {key}: {name}\n");
+				let error = load(&yaml).expect_err("credential header must be rejected");
+				assert!(
+					error
+						.to_string()
+						.contains(&format!("{key}: {}", name.to_ascii_lowercase())),
+					"{key}={name}: {error}"
+				);
+			}
+		}
 	}
 
 	#[test]

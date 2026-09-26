@@ -152,7 +152,8 @@ telemetry:
     </def>
 </deflist>
 
-Header names are validated when the configuration is loaded; an invalid name stops %product% at startup with an
+Header names are validated when the configuration is loaded; an invalid name, or a header that carries credentials
+(<code>Authorization</code>, <code>Proxy-Authorization</code>, <code>Cookie</code>), stops %product% at startup with an
 error naming the offending key.
 
 ### Audit Record
