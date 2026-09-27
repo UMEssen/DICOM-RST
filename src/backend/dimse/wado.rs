@@ -24,6 +24,7 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_pixeldata::Transcode;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
+use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -190,6 +191,47 @@ impl DimseWadoService {
 		})
 	}
 
+	/// Streams the instances received for a C-MOVE until it is completed.
+	fn receive_instances(
+		mut rx: mpsc::Receiver<Result<MoveSubOperation, MoveError>>,
+		expected_uids: Vec<(Tag, String)>,
+	) -> impl Stream<Item = Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
+		stream! {
+			let mut received_sop_instance_uids = HashSet::new();
+			while let Some(result) = rx.recv().await {
+				match result {
+					Ok(MoveSubOperation::Pending(dicom_file)) => {
+						trace!("MoveSubOperation::Pending");
+						let sop_instance_uid = dicom_file.meta().media_storage_sop_instance_uid().to_owned();
+						// Without a Move Originator Message ID (e.g. in sequential mode), the received
+						// instance might belong to another C-MOVE. Never yield instances that were not requested.
+						if !Self::matches_identifier(&dicom_file, &expected_uids) {
+							warn!(
+								sop_instance_uid,
+								"Discarding received instance that does not match the requested identifier"
+							);
+							continue;
+						}
+						// Another C-MOVE of the same study might still be running and send the same instances.
+						if !received_sop_instance_uids.insert(sop_instance_uid.clone()) {
+							warn!(sop_instance_uid, "Discarding duplicate instance");
+							continue;
+						}
+						yield Ok(dicom_file);
+					},
+					Ok(MoveSubOperation::Completed) => {
+						trace!("MoveSubOperation::Completed");
+						break;
+					},
+					Err(err) => {
+						error!("{err}");
+						Err(err)?;
+					}
+				}
+			}
+		}
+	}
+
 	async fn retrieve_instances(
 		&self,
 		aet: &str,
@@ -198,7 +240,7 @@ impl DimseWadoService {
 	) -> BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
 		let message_id = next_message_id();
 		let expected_uids = Self::expected_uids(&identifier);
-		let (tx, mut rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
+		let (tx, rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
 
 		let subscription_topic = match self.config.mode {
 			RetrieveMode::Concurrent => SubscriptionTopic::identified(AE::from(aet), message_id),
@@ -234,35 +276,7 @@ impl DimseWadoService {
 			drop(subscription);
 		});
 
-		let rx_stream = stream! {
-			while let Some(result) = rx.recv().await {
-				match result {
-					Ok(MoveSubOperation::Pending(dicom_file)) => {
-						trace!("MoveSubOperation::Pending");
-						// Without a Move Originator Message ID (e.g. in sequential mode), the received
-						// instance might belong to another C-MOVE. Never yield instances that were not requested.
-						if !Self::matches_identifier(&dicom_file, &expected_uids) {
-							warn!(
-								sop_instance_uid = dicom_file.meta().media_storage_sop_instance_uid(),
-								"Discarding received instance that does not match the requested identifier"
-							);
-							continue;
-						}
-						yield Ok(dicom_file);
-					},
-					Ok(MoveSubOperation::Completed) => {
-						trace!("MoveSubOperation::Completed");
-						break;
-					},
-					Err(err) => {
-						error!("{err}");
-						Err(err)?;
-					}
-				}
-			}
-		};
-
-		rx_stream.boxed()
+		Self::receive_instances(rx, expected_uids).boxed()
 	}
 }
 
@@ -460,5 +474,41 @@ mod tests {
 			&instance("1.2.3\0", "1.2.3.1", "1.2.3.1.1"),
 			&expected
 		));
+	}
+
+	fn received(study: &str, sop: &str) -> MoveSubOperation {
+		let mut obj = instance(study, "1.2.3.1", sop);
+		obj.put_str(tags::SOP_CLASS_UID, VR::UI, "1.2.840.10008.5.1.4.1.1.7");
+		let file = obj
+			.with_meta(FileMetaTableBuilder::new().transfer_syntax("1.2.840.10008.1.2.1"))
+			.expect("FileMetaTableBuilder should contain required data");
+		MoveSubOperation::Pending(Arc::new(file))
+	}
+
+	#[tokio::test]
+	async fn received_instances_are_filtered_and_deduplicated() {
+		let (tx, rx) = mpsc::channel(8);
+		for sub_operation in [
+			received("1.2.3", "1.2.3.1.1"),
+			received("1.2.4", "1.2.4.1.1"), // other study
+			received("1.2.3", "1.2.3.1.1"), // duplicate
+			received("1.2.3", "1.2.3.1.2"),
+			MoveSubOperation::Completed,
+		] {
+			tx.send(Ok(sub_operation)).await.unwrap();
+		}
+
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+		let sop_instance_uids: Vec<String> = DimseWadoService::receive_instances(rx, expected)
+			.map_ok(|file| file.meta().media_storage_sop_instance_uid().to_owned())
+			.try_collect()
+			.await
+			.expect("stream should yield all instances");
+
+		assert_eq!(sop_instance_uids, ["1.2.3.1.1", "1.2.3.1.2"]);
 	}
 }
