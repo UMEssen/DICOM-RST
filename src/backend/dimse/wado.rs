@@ -23,7 +23,6 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_pixeldata::Transcode;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
-use pin_project::pin_project;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -200,6 +199,11 @@ impl DimseWadoService {
 			if send_result.is_err() {
 				warn!("Channel closed - could not notify about C-MOVE completion");
 			}
+
+			// Hold the subscription (and the per-AE permit in sequential mode) until the C-MOVE
+			// has ended at the peer, not just until the HTTP stream is dropped.
+			// Otherwise the next retrieve could receive the remaining instances of this C-MOVE.
+			drop(subscription);
 		});
 
 		let rx_stream = stream! {
@@ -221,40 +225,7 @@ impl DimseWadoService {
 			}
 		};
 
-		DropStream::new(rx_stream, subscription).boxed()
-	}
-}
-
-/// Stream that takes ownership of a value.
-/// Especially useful for keeping semaphore permits until the stream is completed.
-#[pin_project]
-struct DropStream<S, D>
-where
-	S: Stream,
-{
-	#[pin]
-	stream: S,
-	droppable: D,
-}
-
-impl<S, D> DropStream<S, D>
-where
-	S: Stream,
-{
-	pub const fn new(stream: S, droppable: D) -> Self {
-		Self { stream, droppable }
-	}
-}
-
-impl<S, I, D> Stream for DropStream<S, D>
-where
-	S: Stream<Item = I>,
-{
-	type Item = I;
-
-	fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		let this = self.project();
-		this.stream.poll_next(cx)
+		rx_stream.boxed()
 	}
 }
 
