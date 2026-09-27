@@ -1,5 +1,5 @@
 use crate::backend::dimse::{DicomMessage, DATA_SET_EXISTS};
-use crate::types::{AE, US};
+use crate::types::{AE, UI, US};
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::{tags, uids};
@@ -44,4 +44,20 @@ impl From<CompositeMoveRequest> for DicomMessage {
 pub enum MoveSubOperation {
 	Completed,
 	Pending(Arc<FileDicomObject<InMemDicomObject>>),
+}
+
+impl MoveSubOperation {
+	/// The `StudyInstanceUID` of a received instance, if it carries a non-empty one.
+	pub fn study_instance_uid(&self) -> Option<UI> {
+		match self {
+			Self::Pending(file) => file
+				.element(tags::STUDY_INSTANCE_UID)
+				.ok()?
+				.to_str()
+				.ok()
+				.filter(|uid| !uid.is_empty())
+				.map(|uid| UI::from(uid.as_ref())),
+			Self::Completed => None,
+		}
+	}
 }

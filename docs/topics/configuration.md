@@ -218,12 +218,14 @@ Each AET (regardless of the backend) has additional settings specific to the DIC
     <b>DIMSE-backend only:</b>
     Some PACS do not include the <code>MoveOriginatorMessageId</code> attribute in their C-STORE-RQ messages.
     This makes it hard to assign incoming C-STORE-RQ responses to an active C-MOVE operation.
-    As a workaround, you can set the receive mode to <code>sequential</code> to disable concurrent C-MOVEs.
-    Throughput will be limited, but it will work reliably. Consider increasing the timeouts when using the <b>sequential</b> mode.
+    As a workaround, you can set the receive mode to <code>sequential</code>, which assigns incoming instances by their
+    <code>StudyInstanceUID</code> instead. C-MOVEs of the same study run one at a time; C-MOVEs of different studies run concurrently.
+    Instances without a <code>StudyInstanceUID</code> cannot be assigned in this mode and are dropped with a warning.
+    Consider increasing the timeouts when using the <b>sequential</b> mode.
     Most PACS can and should use the <b>concurrent</b> mode.
     <list>
-        <li><b>concurrent</b>: C-MOVE requests are processed concurrently.</li>
-        <li><b>sequential</b>: C-MOVE requests are processed sequentially.</li>
+        <li><b>concurrent</b>: C-MOVE requests are processed concurrently; instances are assigned by <code>MoveOriginatorMessageId</code>.</li>
+        <li><b>sequential</b>: C-MOVE requests for the same study are processed sequentially; instances are assigned by <code>StudyInstanceUID</code>.</li>
     </list>
     </def>
     <def title="wado-rs.receivers" id="dicomweb.wado-rs.receivers">

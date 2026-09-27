@@ -13,9 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sequential` retrieve mode could return instances of a different study: when a retrieve ended early (client
+  disconnect, timeout), the PACS kept sending the previous study, and the next retrieve for the same AET received
+  those instances. Incoming instances are now assigned by their `StudyInstanceUID`, and only C-MOVEs of the same
+  study are serialized, so retrieves of different studies no longer wait for each other (#71)
+
 ### Changed
 
 - Updated `dicom-rs` dependency to 0.10.0
+- `sequential` retrieve mode now only serializes C-MOVEs of the same study; C-MOVEs of different studies run
+  concurrently, limited by the association pool size (#71)
 
 ## [0.3.1] - 2026-09-14
 

@@ -11,7 +11,7 @@ use crate::backend::dimse::{next_message_id, WriteError};
 use crate::config::{RetrieveMode, WadoConfig};
 use crate::rendering::render_instances;
 use crate::types::{Priority, US};
-use crate::types::{QueryRetrieveLevel, AE};
+use crate::types::{QueryRetrieveLevel, AE, UI};
 use association::pool::AssociationPool;
 use async_stream::stream;
 use async_trait::async_trait;
@@ -63,6 +63,7 @@ impl WadoService for DimseWadoService {
 			.retrieve_instances(
 				&request.query.aet,
 				storescp_aet,
+				&request.query.study_instance_uid,
 				Self::create_identifier(Some(&request.query.study_instance_uid), None, None),
 			)
 			.await;
@@ -91,6 +92,7 @@ impl WadoService for DimseWadoService {
 			.retrieve_instances(
 				&request.query.aet,
 				storescp_aet,
+				&request.query.study_instance_uid,
 				Self::create_identifier(Some(&request.query.study_instance_uid), None, None),
 			)
 			.await
@@ -168,6 +170,7 @@ impl DimseWadoService {
 		&self,
 		aet: &str,
 		storescp_aet: &str,
+		study_instance_uid: &str,
 		identifier: InMemDicomObject,
 	) -> BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
 		let message_id = next_message_id();
@@ -175,7 +178,11 @@ impl DimseWadoService {
 
 		let subscription_topic = match self.config.mode {
 			RetrieveMode::Concurrent => SubscriptionTopic::identified(AE::from(aet), message_id),
-			RetrieveMode::Sequential => SubscriptionTopic::unidentified(AE::from(aet)),
+			// The C-MOVE identifier is study-level, and the peer does not tell us
+			// which C-MOVE an instance answers: attribute instances by their study.
+			RetrieveMode::Sequential => {
+				SubscriptionTopic::for_study(AE::from(aet), UI::from(study_instance_uid))
+			}
 		};
 		let subscription = self
 			.mediator
