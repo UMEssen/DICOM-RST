@@ -176,14 +176,8 @@ impl DimseWadoService {
 		let message_id = next_message_id();
 		let (tx, mut rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
 
-		let subscription_topic = match self.config.mode {
-			RetrieveMode::Concurrent => SubscriptionTopic::identified(AE::from(aet), message_id),
-			// The C-MOVE identifier is study-level, and the peer does not tell us
-			// which C-MOVE an instance answers: attribute instances by their study.
-			RetrieveMode::Sequential => {
-				SubscriptionTopic::for_study(AE::from(aet), UI::from(study_instance_uid))
-			}
-		};
+		let subscription_topic =
+			subscription_topic(self.config.mode, aet, study_instance_uid, message_id);
 		let subscription = self
 			.mediator
 			.subscribe(subscription_topic, tx.clone())
@@ -229,6 +223,23 @@ impl DimseWadoService {
 		};
 
 		DropStream::new(rx_stream, subscription).boxed()
+	}
+}
+
+/// The mediator topic a retrieve subscribes to.
+fn subscription_topic(
+	mode: RetrieveMode,
+	aet: &str,
+	study_instance_uid: &str,
+	message_id: US,
+) -> SubscriptionTopic {
+	match mode {
+		RetrieveMode::Concurrent => SubscriptionTopic::identified(AE::from(aet), message_id),
+		// The C-MOVE identifier is study-level, and the peer does not tell us
+		// which C-MOVE an instance answers: attribute instances by their study.
+		RetrieveMode::Sequential => {
+			SubscriptionTopic::for_study(AE::from(aet), UI::from(study_instance_uid))
+		}
 	}
 }
 
@@ -342,6 +353,7 @@ impl Stream for DicomMultipartStream<'_> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use dicom::core::DataElement;
 	use dicom::object::FileMetaTableBuilder;
 	use futures::TryStreamExt;
 
@@ -354,6 +366,51 @@ mod tests {
 				.build()
 				.expect("FileMetaTableBuilder should contain required data"),
 		)
+	}
+
+	fn instance_of_study(study_instance_uid: &str) -> MoveSubOperation {
+		let mut file = test_file();
+		file.put(DataElement::new(
+			tags::STUDY_INSTANCE_UID,
+			VR::UI,
+			study_instance_uid,
+		));
+		MoveSubOperation::Pending(Arc::new(file))
+	}
+
+	/// A sequential retrieve must subscribe to the study it requested: that is the
+	/// only key a C-STORE without Move Originator Message ID can be matched by.
+	#[tokio::test(flavor = "multi_thread")]
+	async fn a_sequential_retrieve_receives_its_requested_study_only() {
+		let mediator = MoveMediator::default();
+		let (tx, mut rx) = mpsc::channel(8);
+		let _subscription = mediator
+			.subscribe(
+				subscription_topic(RetrieveMode::Sequential, "PACS", "2.25.1001", 7),
+				tx,
+			)
+			.await;
+
+		// What the STORE-SCP publishes for a peer that omits the message ID.
+		let store_topic = SubscriptionTopic::new(AE::from("PACS"), None);
+		mediator
+			.publish(&store_topic, Ok(instance_of_study("2.25.1001")))
+			.await
+			.expect("an instance of the requested study must be delivered");
+		assert!(rx.try_recv().is_ok());
+
+		let other = mediator
+			.publish(&store_topic, Ok(instance_of_study("2.25.1002")))
+			.await;
+		assert!(other.is_err(), "an instance of another study was delivered");
+	}
+
+	#[test]
+	fn a_concurrent_retrieve_subscribes_to_its_message_id() {
+		assert_eq!(
+			subscription_topic(RetrieveMode::Concurrent, "PACS", "2.25.1001", 7),
+			SubscriptionTopic::identified(AE::from("PACS"), 7)
+		);
 	}
 
 	#[tokio::test]
