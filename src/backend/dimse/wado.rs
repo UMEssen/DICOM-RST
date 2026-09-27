@@ -15,9 +15,10 @@ use crate::types::{QueryRetrieveLevel, AE};
 use association::pool::AssociationPool;
 use async_stream::stream;
 use async_trait::async_trait;
-use dicom::core::VR;
+use dicom::core::{Tag, VR};
 use dicom::dictionary_std::tags;
 use dicom::encoding::TransferSyntaxIndex;
+use dicom::object::mem::InMemElement;
 use dicom::object::{FileDicomObject, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_pixeldata::Transcode;
@@ -163,6 +164,32 @@ impl DimseWadoService {
         identifier
     }
 
+	/// Returns the UIDs of the identifier that every retrieved instance must match.
+	fn expected_uids(identifier: &InMemDicomObject) -> Vec<(Tag, String)> {
+		[
+			tags::STUDY_INSTANCE_UID,
+			tags::SERIES_INSTANCE_UID,
+			tags::SOP_INSTANCE_UID,
+		]
+		.into_iter()
+		.filter_map(|tag| {
+			let value = identifier.get(tag)?.to_str().ok()?;
+			Some((tag, value.into_owned()))
+		})
+		.collect()
+	}
+
+	/// Checks if the instance matches all expected UIDs.
+	/// Instances without one of the expected UIDs are rejected.
+	fn matches_identifier(file: &InMemDicomObject, expected_uids: &[(Tag, String)]) -> bool {
+		expected_uids.iter().all(|(tag, expected)| {
+			file.get(*tag)
+				.map(InMemElement::to_str)
+				.and_then(Result::ok)
+				.is_some_and(|value| &value == expected)
+		})
+	}
+
 	async fn retrieve_instances(
 		&self,
 		aet: &str,
@@ -170,6 +197,7 @@ impl DimseWadoService {
 		identifier: InMemDicomObject,
 	) -> BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
 		let message_id = next_message_id();
+		let expected_uids = Self::expected_uids(&identifier);
 		let (tx, mut rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
 
 		let subscription_topic = match self.config.mode {
@@ -211,6 +239,15 @@ impl DimseWadoService {
 				match result {
 					Ok(MoveSubOperation::Pending(dicom_file)) => {
 						trace!("MoveSubOperation::Pending");
+						// Without a Move Originator Message ID (e.g. in sequential mode), the received
+						// instance might belong to another C-MOVE. Never yield instances that were not requested.
+						if !Self::matches_identifier(&dicom_file, &expected_uids) {
+							warn!(
+								sop_instance_uid = dicom_file.meta().media_storage_sop_instance_uid(),
+								"Discarding received instance that does not match the requested identifier"
+							);
+							continue;
+						}
 						yield Ok(dicom_file);
 					},
 					Ok(MoveSubOperation::Completed) => {
@@ -335,5 +372,93 @@ mod tests {
 		assert!(!body
 			.windows(b"--boundary".len())
 			.any(|w| w == b"--boundary"));
+	}
+
+	fn instance(study: &str, series: &str, sop: &str) -> InMemDicomObject {
+		let mut obj = InMemDicomObject::new_empty();
+		obj.put_str(tags::STUDY_INSTANCE_UID, VR::UI, study);
+		obj.put_str(tags::SERIES_INSTANCE_UID, VR::UI, series);
+		obj.put_str(tags::SOP_INSTANCE_UID, VR::UI, sop);
+		obj
+	}
+
+	#[test]
+	fn study_identifier_rejects_other_studies() {
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.4", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+		// Prefix of the expected UID must not match
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.33", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+	}
+
+	#[test]
+	fn series_and_instance_identifiers_match_all_levels() {
+		let series = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			Some("1.2.3.1"),
+			None,
+		));
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.1"),
+			&series
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.2", "1.2.3.2.1"),
+			&series
+		));
+
+		let image = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			Some("1.2.3.1"),
+			Some("1.2.3.1.1"),
+		));
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.1"),
+			&image
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.2"),
+			&image
+		));
+	}
+
+	#[test]
+	fn instance_without_expected_uid_is_rejected() {
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&InMemDicomObject::new_empty(),
+			&expected
+		));
+	}
+
+	#[test]
+	fn uid_padding_is_ignored() {
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3\0", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
 	}
 }
