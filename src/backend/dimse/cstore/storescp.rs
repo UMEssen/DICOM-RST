@@ -175,7 +175,8 @@ impl StoreServiceClassProvider {
 					.await
 				{
 					match err {
-						MediatorError::ChannelClosed => error!("{err}"),
+						// The receiver can drop before C-MOVE ends, e.g. after rendering the first image.
+						MediatorError::ChannelClosed => debug!("{err}"),
 						MediatorError::MissingCallback { .. } => warn!("{err}"),
 					}
 				}
