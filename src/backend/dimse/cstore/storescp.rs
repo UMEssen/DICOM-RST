@@ -150,14 +150,6 @@ impl StoreServiceClassProvider {
 				message_id,
 			};
 
-			association
-				.write_message(
-					response,
-					message.presentation_context_id,
-					Duration::from_secs(10),
-				)
-				.await?;
-
 			let move_originator_id = message
 				.command
 				.get(tags::MOVE_ORIGINATOR_MESSAGE_ID)
@@ -183,11 +175,23 @@ impl StoreServiceClassProvider {
 					.await
 				{
 					match err {
-						MediatorError::ChannelClosed => error!("{err}"),
+						// The receiver can drop before C-MOVE ends, e.g. after rendering the first image.
+						MediatorError::ChannelClosed => debug!("{err}"),
 						MediatorError::MissingCallback { .. } => warn!("{err}"),
 					}
 				}
 			}
+
+			// Only respond after publishing the instance: The C-MOVE-SCP sends the final C-MOVE-RSP
+			// once all C-STORE-RSPs were received. Responding earlier would allow the C-MOVE to be
+			// completed before the instance was published, so the retrieve would miss the instance.
+			association
+				.write_message(
+					response,
+					message.presentation_context_id,
+					Duration::from_secs(10),
+				)
+				.await?;
 		}
 		Ok(())
 	}

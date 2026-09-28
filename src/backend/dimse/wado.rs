@@ -15,15 +15,16 @@ use crate::types::{QueryRetrieveLevel, AE};
 use association::pool::AssociationPool;
 use async_stream::stream;
 use async_trait::async_trait;
-use dicom::core::VR;
+use dicom::core::{Tag, VR};
 use dicom::dictionary_std::tags;
 use dicom::encoding::TransferSyntaxIndex;
+use dicom::object::mem::InMemElement;
 use dicom::object::{FileDicomObject, InMemDicomObject};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_pixeldata::Transcode;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
-use pin_project::pin_project;
+use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -164,6 +165,73 @@ impl DimseWadoService {
         identifier
     }
 
+	/// Returns the UIDs of the identifier that every retrieved instance must match.
+	fn expected_uids(identifier: &InMemDicomObject) -> Vec<(Tag, String)> {
+		[
+			tags::STUDY_INSTANCE_UID,
+			tags::SERIES_INSTANCE_UID,
+			tags::SOP_INSTANCE_UID,
+		]
+		.into_iter()
+		.filter_map(|tag| {
+			let value = identifier.get(tag)?.to_str().ok()?;
+			Some((tag, value.into_owned()))
+		})
+		.collect()
+	}
+
+	/// Checks if the instance matches all expected UIDs.
+	/// Instances without one of the expected UIDs are rejected.
+	fn matches_identifier(file: &InMemDicomObject, expected_uids: &[(Tag, String)]) -> bool {
+		expected_uids.iter().all(|(tag, expected)| {
+			file.get(*tag)
+				.map(InMemElement::to_str)
+				.and_then(Result::ok)
+				.is_some_and(|value| &value == expected)
+		})
+	}
+
+	/// Streams the instances received for a C-MOVE until it is completed.
+	fn receive_instances(
+		mut rx: mpsc::Receiver<Result<MoveSubOperation, MoveError>>,
+		expected_uids: Vec<(Tag, String)>,
+	) -> impl Stream<Item = Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
+		stream! {
+			let mut received_sop_instance_uids = HashSet::new();
+			while let Some(result) = rx.recv().await {
+				match result {
+					Ok(MoveSubOperation::Pending(dicom_file)) => {
+						trace!("MoveSubOperation::Pending");
+						let sop_instance_uid = dicom_file.meta().media_storage_sop_instance_uid().to_owned();
+						// Without a Move Originator Message ID (e.g. in sequential mode), the received
+						// instance might belong to another C-MOVE. Never yield instances that were not requested.
+						if !Self::matches_identifier(&dicom_file, &expected_uids) {
+							warn!(
+								sop_instance_uid,
+								"Discarding received instance that does not match the requested identifier"
+							);
+							continue;
+						}
+						// Another C-MOVE of the same study might still be running and send the same instances.
+						if !received_sop_instance_uids.insert(sop_instance_uid.clone()) {
+							warn!(sop_instance_uid, "Discarding duplicate instance");
+							continue;
+						}
+						yield Ok(dicom_file);
+					},
+					Ok(MoveSubOperation::Completed) => {
+						trace!("MoveSubOperation::Completed");
+						break;
+					},
+					Err(err) => {
+						error!("{err}");
+						Err(err)?;
+					}
+				}
+			}
+		}
+	}
+
 	async fn retrieve_instances(
 		&self,
 		aet: &str,
@@ -171,7 +239,8 @@ impl DimseWadoService {
 		identifier: InMemDicomObject,
 	) -> BoxStream<'static, Result<Arc<FileDicomObject<InMemDicomObject>>, MoveError>> {
 		let message_id = next_message_id();
-		let (tx, mut rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
+		let expected_uids = Self::expected_uids(&identifier);
+		let (tx, rx) = mpsc::channel::<Result<MoveSubOperation, MoveError>>(1);
 
 		let subscription_topic = match self.config.mode {
 			RetrieveMode::Concurrent => SubscriptionTopic::identified(AE::from(aet), message_id),
@@ -200,61 +269,14 @@ impl DimseWadoService {
 			if send_result.is_err() {
 				warn!("Channel closed - could not notify about C-MOVE completion");
 			}
+
+			// Hold the subscription (and the per-AE permit in sequential mode) until the C-MOVE
+			// has ended at the peer, not just until the HTTP stream is dropped.
+			// Otherwise the next retrieve could receive the remaining instances of this C-MOVE.
+			drop(subscription);
 		});
 
-		let rx_stream = stream! {
-			while let Some(result) = rx.recv().await {
-				match result {
-					Ok(MoveSubOperation::Pending(dicom_file)) => {
-						trace!("MoveSubOperation::Pending");
-						yield Ok(dicom_file);
-					},
-					Ok(MoveSubOperation::Completed) => {
-						trace!("MoveSubOperation::Completed");
-						break;
-					},
-					Err(err) => {
-						error!("{err}");
-						Err(err)?;
-					}
-				}
-			}
-		};
-
-		DropStream::new(rx_stream, subscription).boxed()
-	}
-}
-
-/// Stream that takes ownership of a value.
-/// Especially useful for keeping semaphore permits until the stream is completed.
-#[pin_project]
-struct DropStream<S, D>
-where
-	S: Stream,
-{
-	#[pin]
-	stream: S,
-	droppable: D,
-}
-
-impl<S, D> DropStream<S, D>
-where
-	S: Stream,
-{
-	pub const fn new(stream: S, droppable: D) -> Self {
-		Self { stream, droppable }
-	}
-}
-
-impl<S, I, D> Stream for DropStream<S, D>
-where
-	S: Stream<Item = I>,
-{
-	type Item = I;
-
-	fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		let this = self.project();
-		this.stream.poll_next(cx)
+		Self::receive_instances(rx, expected_uids).boxed()
 	}
 }
 
@@ -364,5 +386,129 @@ mod tests {
 		assert!(!body
 			.windows(b"--boundary".len())
 			.any(|w| w == b"--boundary"));
+	}
+
+	fn instance(study: &str, series: &str, sop: &str) -> InMemDicomObject {
+		let mut obj = InMemDicomObject::new_empty();
+		obj.put_str(tags::STUDY_INSTANCE_UID, VR::UI, study);
+		obj.put_str(tags::SERIES_INSTANCE_UID, VR::UI, series);
+		obj.put_str(tags::SOP_INSTANCE_UID, VR::UI, sop);
+		obj
+	}
+
+	#[test]
+	fn study_identifier_rejects_other_studies() {
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.4", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+		// Prefix of the expected UID must not match
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.33", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+	}
+
+	#[test]
+	fn series_and_instance_identifiers_match_all_levels() {
+		let series = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			Some("1.2.3.1"),
+			None,
+		));
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.1"),
+			&series
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.2", "1.2.3.2.1"),
+			&series
+		));
+
+		let image = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			Some("1.2.3.1"),
+			Some("1.2.3.1.1"),
+		));
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.1"),
+			&image
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&instance("1.2.3", "1.2.3.1", "1.2.3.1.2"),
+			&image
+		));
+	}
+
+	#[test]
+	fn instance_without_expected_uid_is_rejected() {
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+		assert!(!DimseWadoService::matches_identifier(
+			&InMemDicomObject::new_empty(),
+			&expected
+		));
+	}
+
+	#[test]
+	fn uid_padding_is_ignored() {
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+		assert!(DimseWadoService::matches_identifier(
+			&instance("1.2.3\0", "1.2.3.1", "1.2.3.1.1"),
+			&expected
+		));
+	}
+
+	fn received(study: &str, sop: &str) -> MoveSubOperation {
+		let mut obj = instance(study, "1.2.3.1", sop);
+		obj.put_str(tags::SOP_CLASS_UID, VR::UI, "1.2.840.10008.5.1.4.1.1.7");
+		let file = obj
+			.with_meta(FileMetaTableBuilder::new().transfer_syntax("1.2.840.10008.1.2.1"))
+			.expect("FileMetaTableBuilder should contain required data");
+		MoveSubOperation::Pending(Arc::new(file))
+	}
+
+	#[tokio::test]
+	async fn received_instances_are_filtered_and_deduplicated() {
+		let (tx, rx) = mpsc::channel(8);
+		for sub_operation in [
+			received("1.2.3", "1.2.3.1.1"),
+			received("1.2.4", "1.2.4.1.1"), // other study
+			received("1.2.3", "1.2.3.1.1"), // duplicate
+			received("1.2.3", "1.2.3.1.2"),
+			MoveSubOperation::Completed,
+		] {
+			tx.send(Ok(sub_operation)).await.unwrap();
+		}
+
+		let expected = DimseWadoService::expected_uids(&DimseWadoService::create_identifier(
+			Some("1.2.3"),
+			None,
+			None,
+		));
+		let sop_instance_uids: Vec<String> = DimseWadoService::receive_instances(rx, expected)
+			.map_ok(|file| file.meta().media_storage_sop_instance_uid().to_owned())
+			.try_collect()
+			.await
+			.expect("stream should yield all instances");
+
+		assert_eq!(sop_instance_uids, ["1.2.3.1.1", "1.2.3.1.2"]);
 	}
 }

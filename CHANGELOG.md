@@ -9,9 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Optional `mimalloc` feature that uses mimalloc as the global allocator. Enabled by default in the Docker images to reduce memory growth in long-running deployments (#68)
+### Changed
 
 ### Fixed
+
+- WADO-RS requests in `sequential` mode could return instances of another study after a previous
+  request ended early. Received instances are now filtered by the requested UIDs and deduplicated.
+- WADO-RS requests could miss instances (e.g. 404 for single-instance studies) under concurrent load,
+  as the C-MOVE could complete before the received instance was handed to the request.
+
+## [0.3.2] - 2026-09-25
+
+### Added
+
+- Optional `mimalloc` feature that uses mimalloc as the global allocator. Enabled by default in the Docker images to reduce memory growth in long-running deployments (#68)
 
 ### Changed
 
@@ -126,3 +137,4 @@ It includes basic support for QIDO-RS, WADO-RS and STOW-RS for the DIMSE backend
 [0.2.1]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.2.1
 [0.3.0]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.3.0
 [0.3.1]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.3.1
+[0.3.2]: https://github.com/UMEssen/DICOM-RST/releases/tag/v0.3.2
