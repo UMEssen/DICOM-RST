@@ -24,6 +24,10 @@ tags:
       description: DICOM PS3.18 10.5
       url: https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.5.html
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   parameters:
     aet:
       in: path
@@ -79,6 +83,33 @@ paths:
               schema:
                 type: array
               example: [ "CLINICAL", "RESEARCH" ]
+    post:
+      summary: Register an AET at runtime
+      description: >
+        Only available if `server.dynamic-registration.enabled` is set.
+        Registered AETs are kept in memory and are lost after a restart.
+      tags:
+        - DICOM-RST
+      security:
+        - bearerAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { "aet": "PACS", "backend": "DIMSE", "host": "10.1.2.3", "port": 104, "wado-rs": { "timeout": 60000, "receivers": [ "DICOM-RST" ] } }
+      responses:
+        201:
+          description: The AET was registered. Returns the normalized configuration.
+        200:
+          description: The AET is already registered with an identical configuration. Nothing was changed.
+        401:
+          description: Missing or invalid bearer token.
+        403:
+          description: The host is not allowed by `server.dynamic-registration.allowed-hosts`.
+        409:
+          description: The AET is already registered with a different configuration or is statically configured.
+        422:
+          description: The configuration is invalid, uses an unsupported backend or the host cannot be resolved.
   /aets/{aet}:
     get:
       summary: AET Healthcheck
@@ -92,6 +123,24 @@ paths:
           content:
             text/plain:
               example: "Connection is healthy"
+    delete:
+      summary: Remove an AET registered at runtime
+      description: Only available if `server.dynamic-registration.enabled` is set.
+      tags:
+        - DICOM-RST
+      security:
+        - bearerAuth: [ ]
+      parameters:
+        - $ref: "#/components/parameters/aet"
+      responses:
+        204:
+          description: The AET was removed.
+        401:
+          description: Missing or invalid bearer token.
+        404:
+          description: The AET is unknown.
+        409:
+          description: The AET is statically configured and cannot be removed.
   /aets/{aet}/studies:
     get:
       tags:

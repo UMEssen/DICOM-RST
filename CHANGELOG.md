@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AEs can be registered and removed at runtime with `POST /aets` and `DELETE /aets/{aet}` (#35).
+  Disabled by default; enable it with `server.dynamic-registration`, which requires a bearer token and
+  a list of allowed hosts. An AET can only be registered once: identical re-registrations are a no-op,
+  different configurations are rejected with `409 Conflict`. Registrations are not persisted.
+
 ### Changed
+
+- Startup fails if an AET is configured multiple times or its host cannot be resolved, instead of
+  silently using the last entry or panicking.
+- `GET /aets` returns the AETs in alphabetical order.
 
 ### Fixed
 

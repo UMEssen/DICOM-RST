@@ -47,6 +47,7 @@ mime = "0.3.17"
 tower-http = { version = "0.6.6", features = ["trace", "cors", "timeout", "normalize-path"] }
 tower = { version = "0.5.2", features = ["limit"] }
 url = "2.5.7"
+ipnet = "2.11.0"
 async-trait = "0.1.89"
 async-stream = "0.3.6"
 uuid = { version = "1.18.1", features = ["v4"] }
@@ -65,6 +66,7 @@ aws-credential-types = { version = "1.2.13", optional = true }
 testcontainers = "0.27.3"
 dicom-test-files = "0.4.0"
 dicom-web = "0.6.0"
+reqwest = { version = "0.12.28", default-features = false, features = ["json"] }
 
 [lints.rust]
 unsafe_code = "forbid"

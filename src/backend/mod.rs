@@ -41,22 +41,24 @@ where
 
 		let state = AppState::from_ref(state);
 
-		let ae_config = state
-			.config
-			.aets
-			.into_iter()
-			.find(|aet_config| aet_config.aet == aet)
+		let registered_ae = state
+			.registry
+			.get(&aet)
 			.ok_or_else(|| (StatusCode::NOT_FOUND, format!("Unknown AET {aet}")))?;
+		let ae_config = &registered_ae.config;
 
 		// TODO: Use a singleton to avoid re-creating on every request.
-		let provider = match ae_config.backend {
+		let provider = match &ae_config.backend {
 			BackendConfig::Dimse { .. } => {
 				use crate::backend::dimse::mwl::DimseMwlService;
 				use crate::backend::dimse::qido::DimseQidoService;
 				use crate::backend::dimse::stow::DimseStowService;
 				use crate::backend::dimse::wado::DimseWadoService;
 
-				let pool = state.pools.get(&ae_config.aet).expect("pool should exist");
+				let pool = registered_ae
+					.pool
+					.as_ref()
+					.expect("DIMSE AEs should have an association pool");
 
 				Self {
 					qido: Some(Box::new(DimseQidoService::new(
@@ -85,7 +87,7 @@ where
 
 				Self {
 					qido: None,
-					wado: Some(Box::new(S3WadoService::new(&config))),
+					wado: Some(Box::new(S3WadoService::new(config))),
 					stow: None,
 					mwl: None,
 				}
