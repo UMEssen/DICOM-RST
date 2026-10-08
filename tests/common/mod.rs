@@ -33,6 +33,10 @@ pub struct ServerProcess {
 }
 
 impl ServerProcess {
+	pub const fn http_port(&self) -> u16 {
+		self.http_port
+	}
+
 	fn spawn(config: &str) -> anyhow::Result<Self> {
 		let workdir = std::env::temp_dir().join(format!("dicom-rst-{}", uuid::Uuid::new_v4()));
 		std::fs::create_dir_all(&workdir)?;

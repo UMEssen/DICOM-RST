@@ -1,9 +1,10 @@
 use crate::types::AE;
 use crate::DEFAULT_AET;
 
+use ipnet::IpNet;
 use serde::de::Error;
-use serde::{Deserialize, Deserializer};
-use std::net::IpAddr;
+use serde::{Deserialize, Deserializer, Serialize};
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -17,7 +18,7 @@ pub struct AppConfig {
 	pub aets: Vec<ApplicationEntityConfig>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ApplicationEntityConfig {
 	pub aet: String,
@@ -33,7 +34,7 @@ pub struct ApplicationEntityConfig {
 	pub mwl: MwlConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "backend")]
 pub enum BackendConfig {
 	#[serde(rename = "DIMSE")]
@@ -43,7 +44,7 @@ pub enum BackendConfig {
 	S3(S3Config),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct DimseConfig {
 	pub host: String,
@@ -53,7 +54,7 @@ pub struct DimseConfig {
 }
 
 #[cfg(feature = "s3")]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct S3Config {
 	pub endpoint: String,
@@ -61,14 +62,15 @@ pub struct S3Config {
 	#[serde(default)]
 	pub region: Option<String>,
 	pub concurrency: usize,
-	#[serde(default)]
+	// Never expose credentials when the configuration is serialized, e.g. in API responses.
+	#[serde(default, skip_serializing)]
 	pub credentials: Option<S3CredentialsConfig>,
 	#[serde(default)]
 	pub endpoint_style: S3EndpointStyle,
 }
 
 #[cfg(feature = "s3")]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum S3EndpointStyle {
 	Path,
@@ -83,7 +85,7 @@ impl Default for S3EndpointStyle {
 }
 
 #[cfg(feature = "s3")]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum S3CredentialsConfig {
 	#[serde(rename_all = "kebab-case")]
@@ -130,7 +132,7 @@ impl S3CredentialsConfig {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct QidoConfig {
 	pub timeout: u64,
@@ -142,7 +144,7 @@ impl Default for QidoConfig {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct WadoConfig {
 	pub timeout: u64,
@@ -162,7 +164,7 @@ impl Default for WadoConfig {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
 pub enum RetrieveMode {
@@ -171,7 +173,7 @@ pub enum RetrieveMode {
 	Sequential,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct StowConfig {
 	pub timeout: u64,
@@ -183,7 +185,7 @@ impl Default for StowConfig {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct MwlConfig {
 	pub timeout: u64,
@@ -226,6 +228,8 @@ pub struct ServerConfig {
 	pub aet: AE,
 	pub http: HttpServerConfig,
 	pub dimse: Vec<DimseServerConfig>,
+	#[serde(default)]
+	pub dynamic_registration: DynamicRegistrationConfig,
 }
 
 impl Default for ServerConfig {
@@ -234,7 +238,67 @@ impl Default for ServerConfig {
 			aet: AE::from(DEFAULT_AET),
 			http: HttpServerConfig::default(),
 			dimse: vec![DimseServerConfig::default()],
+			dynamic_registration: DynamicRegistrationConfig::default(),
 		}
+	}
+}
+
+/// Configuration for registering and removing AEs at runtime via the HTTP API.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct DynamicRegistrationConfig {
+	#[serde(default)]
+	pub enabled: bool,
+	/// Name of the environment variable that contains the bearer token.
+	#[serde(default)]
+	pub token_env: Option<String>,
+	/// Hosts that dynamically registered AEs may point to. An empty list allows no hosts.
+	#[serde(default)]
+	pub allowed_hosts: Vec<AllowedHost>,
+}
+
+impl DynamicRegistrationConfig {
+	/// Returns the bearer token if dynamic registration is enabled.
+	/// # Errors
+	/// Returns an error if dynamic registration is enabled, but no token is configured.
+	pub fn resolve_token(&self) -> anyhow::Result<Option<String>> {
+		if !self.enabled {
+			return Ok(None);
+		}
+		let Some(token_env) = &self.token_env else {
+			anyhow::bail!("server.dynamic-registration.token-env is required when enabled");
+		};
+		match std::env::var(token_env) {
+			Ok(token) if !token.trim().is_empty() => Ok(Some(token.trim().to_owned())),
+			_ => anyhow::bail!("Environment variable {token_env} must contain the bearer token for dynamic registration"),
+		}
+	}
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct AllowedHost {
+	/// An IP address, a CIDR range or a hostname.
+	pub host: String,
+	/// Restricts the entry to a single port. All ports are allowed if not set.
+	#[serde(default)]
+	pub port: Option<u16>,
+}
+
+impl AllowedHost {
+	/// Checks if an AE with the configured `host` that resolved to `address` is allowed.
+	pub fn permits(&self, host: &str, address: SocketAddr) -> bool {
+		if self.port.is_some_and(|port| port != address.port()) {
+			return false;
+		}
+		let pattern = self.host.trim();
+		if let Ok(network) = pattern.parse::<IpNet>() {
+			return network.contains(&address.ip());
+		}
+		if let Ok(ip) = pattern.parse::<IpAddr>() {
+			return ip == address.ip();
+		}
+		pattern.eq_ignore_ascii_case(host.trim())
 	}
 }
 
@@ -318,7 +382,7 @@ impl Default for DimseServerConfig {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PoolConfig {
 	pub size: usize,

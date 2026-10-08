@@ -1,6 +1,5 @@
 use crate::backend::dimse::cmove::movescu::MoveError;
 use crate::backend::dimse::cmove::MoveSubOperation;
-use crate::config::{AppConfig, RetrieveMode};
 use crate::types::{AE, US};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -12,6 +11,7 @@ use tracing::info;
 pub type Callback = Sender<Result<MoveSubOperation, MoveError>>;
 
 /// A mediator for the communication between the MOVE-SCU and STORE-SCP.
+#[derive(Default)]
 pub struct MoveMediator {
 	inner: Arc<InnerMoveMediator>,
 }
@@ -26,37 +26,36 @@ impl Clone for MoveMediator {
 
 #[derive(Default)]
 struct InnerMoveMediator {
-	semaphores: RwLock<HashMap<AE, Arc<Semaphore>>>,
+	// std RwLock: the lock is never held across an await point and must be usable from
+	// synchronous code, e.g. while the AE registry holds its own lock.
+	semaphores: std::sync::RwLock<HashMap<AE, Arc<Semaphore>>>,
 	callbacks: RwLock<HashMap<SubscriptionTopic, Callback>>,
 }
 
 impl MoveMediator {
-	pub fn new(config: &AppConfig) -> Self {
-		let mut semaphores = HashMap::new();
-		for ae in &config.aets {
-			if matches!(ae.wado.mode, RetrieveMode::Sequential) {
-				info!(
-					"Using Sequential Retrieve Mode for {} - Reduced performance is expected.",
-					ae.aet
-				);
-				semaphores.insert(AE::from(&ae.aet), Arc::new(Semaphore::new(1)));
-			}
-		}
-		Self {
-			inner: Arc::new(InnerMoveMediator {
-				semaphores: RwLock::new(semaphores),
-				callbacks: RwLock::new(HashMap::new()),
-			}),
-		}
+	/// Limits retrieves from `ae` to a single concurrent C-MOVE operation.
+	pub fn enable_sequential_mode(&self, ae: &AE) {
+		info!("Using Sequential Retrieve Mode for {ae} - Reduced performance is expected.");
+		self.inner
+			.semaphores
+			.write()
+			.unwrap()
+			.insert(AE::from(ae), Arc::new(Semaphore::new(1)));
+	}
+
+	/// Removes all state associated with `ae`, e.g. after it was unregistered.
+	pub fn remove(&self, ae: &AE) {
+		self.inner.semaphores.write().unwrap().remove(ae);
 	}
 
 	pub async fn subscribe(&self, topic: SubscriptionTopic, callback: Callback) -> Subscription {
-		let semaphore: Option<Arc<Semaphore>> = {
-			let semaphores = self.inner.semaphores.read().await;
-			let semaphore = semaphores.get(&topic.originator).cloned();
-			drop(semaphores);
-			semaphore
-		};
+		let semaphore: Option<Arc<Semaphore>> = self
+			.inner
+			.semaphores
+			.read()
+			.unwrap()
+			.get(&topic.originator)
+			.cloned();
 
 		let permit = if let Some(semaphore) = semaphore {
 			let permit = semaphore.acquire_owned().await.unwrap();

@@ -3,16 +3,15 @@
 pub(crate) mod api;
 pub(crate) mod backend;
 pub(crate) mod config;
+pub(crate) mod registry;
 pub(crate) mod rendering;
 pub(crate) mod types;
 pub(crate) mod utils;
 
-use crate::backend::dimse::association;
 use crate::backend::dimse::cmove::MoveMediator;
 use crate::backend::dimse::StoreServiceClassProvider;
 use crate::config::{AppConfig, HttpServerConfig};
-use crate::types::AE;
-use association::pool::AssociationPools;
+use crate::registry::AeRegistry;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -65,8 +64,7 @@ fn init_logger(level: tracing::Level) {
 
 #[derive(Clone)]
 pub struct AppState {
-	pub config: AppConfig,
-	pub pools: AssociationPools,
+	pub registry: AeRegistry,
 	pub mediator: MoveMediator,
 }
 
@@ -109,27 +107,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run(config: AppConfig) -> anyhow::Result<()> {
-	let mediator = MoveMediator::new(&config);
-	let pools = AssociationPools::new(&config);
+	let admin_token = config.server.dynamic_registration.resolve_token()?;
+	let mediator = MoveMediator::default();
+	let registry = AeRegistry::new(&config, mediator.clone())?;
 
 	let app_state = AppState {
-		config: config.clone(),
+		registry: registry.clone(),
 		mediator: mediator.clone(),
-		pools,
 	};
 
-	for dimse_config in config.server.dimse {
+	for dimse_config in config.server.dimse.clone() {
 		let mediator = mediator.clone();
-		let subscribers: Vec<AE> = config
-			.aets
-			.iter()
-			.filter(|&ae| ae.wado.receivers.contains(&dimse_config.aet))
-			.cloned()
-			.map(|ae| ae.aet)
-			.collect();
+		let registry = registry.clone();
 
 		tokio::spawn(async move {
-			let storescp = StoreServiceClassProvider::new(mediator, subscribers, dimse_config);
+			let storescp = StoreServiceClassProvider::new(mediator, registry, dimse_config);
 			if let Err(err) = storescp.spawn().await {
 				error!("Failed to spawn STORE-SCP thread: {err}");
 				// Unrecoverable error - exit the process
@@ -138,7 +130,7 @@ async fn run(config: AppConfig) -> anyhow::Result<()> {
 		});
 	}
 
-	let app = api::routes(&config.server.http.base_path)
+	let app = api::routes(&config.server.http.base_path, admin_token)
 		.layer(CorsLayer::permissive())
 		.layer(axum::middleware::from_fn(add_common_headers))
 		.layer(

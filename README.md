@@ -203,6 +203,37 @@ Returns a simple OK if the connection is still healthy.
 | ------------ | ------------- |
 | Health Check | `/aets/{aet}` |
 
+### Dynamic AE Registration
+
+Registers and removes AEs at runtime. Disabled by default.
+Registered AEs are kept in memory only and are lost after a restart.
+
+| Resource    | Method   | URI Template  |
+| ----------- | -------- | ------------- |
+| Register AE | `POST`   | `/aets`       |
+| Remove AE   | `DELETE` | `/aets/{aet}` |
+
+Requests must send a bearer token, and AEs may only point to allowed hosts.
+Allowed hosts can be IP addresses, CIDR ranges or hostnames, optionally restricted to a single port:
+
+```yaml
+server:
+  dynamic-registration:
+    enabled: true
+    token-env: DICOM_RST_ADMIN_TOKEN # environment variable that contains the bearer token
+    allowed-hosts:
+      - host: 10.0.0.0/8 # any address from 10.0.0.0 to 10.255.255.255
+      - host: 192.168.10.0/24 # any address from 192.168.10.0 to 192.168.10.255, but only port 104
+        port: 104
+      - host: fd00::/8 # IPv6 unique local addresses
+      - host: pacs.internal # exact hostname
+```
+
+To allow any host, use `0.0.0.0/0` and `::/0`.
+Each AET can only be registered once. Registering it again with the same configuration has no effect,
+a different configuration is rejected with `409 Conflict`.
+See the [configuration documentation](docs/topics/configuration.md) for details.
+
 [^1]:
     The [DICOM-RST logo](./dicom-rst-icon.png) is adapted from
     the [Rust logo](https://github.com/rust-lang/rust-artwork)

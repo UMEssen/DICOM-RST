@@ -7,6 +7,7 @@ use crate::backend::dimse::cstore::{
 };
 use crate::backend::dimse::{DicomMessageReader, DicomMessageWriter};
 use crate::config::DimseServerConfig;
+use crate::registry::AeRegistry;
 use crate::types::{AE, UI, US};
 use anyhow::Context;
 use association::server::{ServerAssociation, ServerAssociationOptions};
@@ -26,16 +27,16 @@ pub struct StoreServiceClassProvider {
 
 struct InnerStoreServiceClassProvider {
 	mediator: MoveMediator,
-	subscribers: Vec<AE>,
+	registry: AeRegistry,
 	config: DimseServerConfig,
 }
 
 impl StoreServiceClassProvider {
-	pub fn new(mediator: MoveMediator, subscribers: Vec<AE>, config: DimseServerConfig) -> Self {
+	pub fn new(mediator: MoveMediator, registry: AeRegistry, config: DimseServerConfig) -> Self {
 		Self {
 			inner: Arc::new(InnerStoreServiceClassProvider {
 				mediator,
-				subscribers,
+				registry,
 				config,
 			}),
 		}
@@ -166,7 +167,9 @@ impl StoreServiceClassProvider {
 			);
 
 			let file = Arc::new(file);
-			for sub_aet in &inner.subscribers {
+			// Looked up for every instance, as AEs can be registered and removed at runtime.
+			let subscribers = inner.registry.receivers_of(&inner.config.aet);
+			for sub_aet in &subscribers {
 				trace!("Publishing sub-operation result to subscriber {sub_aet}");
 				let topic = SubscriptionTopic::new(AE::from(sub_aet), move_originator_id);
 				if let Err(err) = inner

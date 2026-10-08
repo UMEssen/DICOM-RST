@@ -17,10 +17,10 @@ pub mod qido;
 pub mod stow;
 pub mod wado;
 
-pub fn routes(base_path: &str) -> Router<AppState> {
+pub fn routes(base_path: &str, admin_token: Option<String>) -> Router<AppState> {
 	let router = Router::new()
 		.merge(home::routes())
-		.merge(aets::routes())
+		.merge(aets::routes(admin_token))
 		.nest(
 			"/aets/{aet}",
 			Router::new()

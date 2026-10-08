@@ -184,6 +184,61 @@ server:
 
 </deflist>
 
+## Dynamic Registration Config
+
+AEs can be registered and removed at runtime with `POST /aets` and `DELETE /aets/{aet}`.
+This is disabled by default.
+
+```yaml
+server:
+  dynamic-registration:
+    enabled: true
+    token-env: DICOM_RST_ADMIN_TOKEN
+    allowed-hosts:
+      - host: 10.0.0.0/8
+      - host: pacs.internal
+        port: 4242
+```
+
+The request body of `POST /aets` uses the same format as an entry in `aets` (see below), serialized as JSON:
+
+```shell
+curl -X POST http://localhost:8080/aets \
+  -H "Authorization: Bearer $DICOM_RST_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"aet": "MY-PACS", "backend": "DIMSE", "host": "10.1.2.3", "port": 104, "wado-rs": {"timeout": 60000, "receivers": ["DICOM-RST"]}}'
+```
+
+Each AET can only be registered once:
+
+- Registering an AET again with an identical configuration is a no-op and returns `200 OK`, so clients can safely retry.
+- Registering an AET with a different configuration returns `409 Conflict`. Remove the AE first to change it.
+- AEs from the configuration file cannot be modified or removed.
+
+<warning>
+Dynamically registered AEs are only kept in memory and are lost when %product% restarts.
+The client that registers AEs is responsible for registering them again after a restart.
+</warning>
+
+<deflist>
+    <def title="server.dynamic-registration.enabled" id="server.dynamic-registration.enabled">
+    Enables the endpoints for registering and removing AEs at runtime. Disabled by default.
+    </def>
+    <def title="server.dynamic-registration.token-env" id="server.dynamic-registration.token-env">
+    The name of the environment variable that contains the bearer token.
+    Requests must send this token in the <code>Authorization: Bearer</code> header.
+    Required if dynamic registration is enabled.
+    </def>
+    <def title="server.dynamic-registration.allowed-hosts" id="server.dynamic-registration.allowed-hosts">
+    The hosts that dynamically registered AEs may point to.
+    <code>host</code> is an IP address, a CIDR range or a hostname, which is compared with the host in the request.
+    <code>port</code> optionally restricts the entry to a single port.
+    An empty list allows no hosts.
+    </def>
+</deflist>
+
+Only the DIMSE backend can be registered dynamically.
+
 ## DICOMweb Config
 
 ```yaml

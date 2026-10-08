@@ -1,9 +1,9 @@
 use crate::backend::dimse::association;
-use crate::config::{AppConfig, BackendConfig};
+use crate::config::PoolConfig;
 use crate::types::UI;
 use association::client::{ClientAssociation, ClientAssociationOptions};
-use std::collections::{HashMap, VecDeque};
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::collections::VecDeque;
+use std::net::SocketAddr;
 use std::ops::Deref;
 
 use futures::TryFutureExt;
@@ -279,61 +279,22 @@ impl Manager for AssociationManager {
 
 pub type AssociationPool = Pool<AssociationManager>;
 
-#[derive(Clone)]
-pub struct AssociationPools(HashMap<String, AssociationPool>);
-
-impl AssociationPools {
-	pub fn new(config: &AppConfig) -> Self {
-		let mut pools = HashMap::with_capacity(config.server.dimse.len());
-		for ae_config in &config.aets {
-			#[allow(irrefutable_let_patterns)] // the lint is not aware of the S3 feature
-			if let BackendConfig::Dimse(dimse_config) = &ae_config.backend {
-				let pool_size = dimse_config.pool.size;
-
-				// Hacky: there is no function in the standard library to lookup host names.
-				// to_socket_addrs requires a port, so we're using a dummy port of :0.
-				// This port has no meaning and is removed when collecting the IP addresses.
-				let hosts: Vec<IpAddr> = format!("{}:0", dimse_config.host)
-					.to_socket_addrs()
-					.unwrap_or_default()
-					.map(|addr| addr.ip())
-					.collect();
-
-				let Some(host_ip) = hosts.first() else {
-					panic!("Could not resolve hostname {}", dimse_config.host)
-				};
-
-				let address = SocketAddr::new(*host_ip, dimse_config.port);
-				let mgr = AssociationManager {
-					calling_aet: config.server.aet.clone(),
-					address,
-					called_aet: ae_config.aet.clone(),
-				};
-
-				let pool = Pool::new(
-					mgr,
-					dimse_config.pool.size,
-					Duration::from_millis(dimse_config.pool.timeout),
-				);
-				pools.insert(ae_config.aet.clone(), pool);
-
-				info!(
-					aet = ae_config.aet,
-					pool_size, "Created new association pool"
-				);
-			}
-		}
-
-		Self(pools)
-	}
-
-	#[inline]
-	pub fn get(&self, aet: &str) -> Option<&AssociationPool> {
-		self.0.get(aet)
-	}
-
-	#[inline]
-	pub fn aets(&self) -> impl Iterator<Item = &String> {
-		self.0.keys()
-	}
+/// Creates an association pool for the AE `called_aet` that is reachable at `address`.
+pub fn new_association_pool(
+	calling_aet: &str,
+	called_aet: &str,
+	address: SocketAddr,
+	config: &PoolConfig,
+) -> AssociationPool {
+	let mgr = AssociationManager {
+		calling_aet: calling_aet.to_owned(),
+		address,
+		called_aet: called_aet.to_owned(),
+	};
+	info!(
+		aet = called_aet,
+		pool_size = config.size,
+		"Created new association pool"
+	);
+	Pool::new(mgr, config.size, Duration::from_millis(config.timeout))
 }
