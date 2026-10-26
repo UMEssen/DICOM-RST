@@ -12,6 +12,7 @@ use serde::{Deserialize, Deserializer};
 
 mod aets;
 mod home;
+pub mod mpps;
 pub mod mwl;
 pub mod qido;
 pub mod stow;
@@ -27,7 +28,8 @@ pub fn routes(base_path: &str) -> Router<AppState> {
 				.merge(qido::routes())
 				.merge(wado::routes())
 				.merge(stow::routes())
-				.merge(mwl::routes()),
+				.merge(mwl::routes())
+				.merge(mpps::routes()),
 		);
 
 	// axum no longer supports nesting at the root

@@ -31,6 +31,8 @@ pub struct ApplicationEntityConfig {
 	pub stow: StowConfig,
 	#[serde(default, rename = "mwl-rs")]
 	pub mwl: MwlConfig,
+	#[serde(default, rename = "mpps-rs")]
+	pub mpps: MppsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -190,6 +192,18 @@ pub struct MwlConfig {
 }
 
 impl Default for MwlConfig {
+	fn default() -> Self {
+		Self { timeout: 30_000 }
+	}
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct MppsConfig {
+	pub timeout: u64,
+}
+
+impl Default for MppsConfig {
 	fn default() -> Self {
 		Self { timeout: 30_000 }
 	}

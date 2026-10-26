@@ -29,7 +29,7 @@ pub struct ServerProcess {
 	child: Child,
 	stdout: Lines<BufReader<ChildStdout>>,
 	workdir: PathBuf,
-	http_port: u16,
+	pub http_port: u16,
 }
 
 impl ServerProcess {

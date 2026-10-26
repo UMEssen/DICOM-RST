@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MPPS-RS (Modality Performed Procedure Step) support for the DIMSE backend: the Create, Update and
+  Retrieve transactions are translated into N-CREATE, N-SET and N-GET requests. The timeout can be
+  configured with the new `mpps-rs.timeout` option.
+
 ### Changed
 
 ### Fixed

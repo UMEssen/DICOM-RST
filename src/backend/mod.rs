@@ -1,3 +1,4 @@
+use crate::api::mpps::MppsService;
 use crate::api::mwl::MwlService;
 use crate::api::qido::QidoService;
 use crate::api::stow::StowService;
@@ -20,6 +21,7 @@ pub struct ServiceProvider {
 	pub wado: Option<Box<dyn WadoService>>,
 	pub stow: Option<Box<dyn StowService>>,
 	pub mwl: Option<Box<dyn MwlService>>,
+	pub mpps: Option<Box<dyn MppsService>>,
 }
 
 impl<S> FromRequestParts<S> for ServiceProvider
@@ -51,6 +53,7 @@ where
 		// TODO: Use a singleton to avoid re-creating on every request.
 		let provider = match ae_config.backend {
 			BackendConfig::Dimse { .. } => {
+				use crate::backend::dimse::mpps::DimseMppsService;
 				use crate::backend::dimse::mwl::DimseMwlService;
 				use crate::backend::dimse::qido::DimseQidoService;
 				use crate::backend::dimse::stow::DimseStowService;
@@ -77,6 +80,10 @@ where
 						pool.to_owned(),
 						Duration::from_millis(ae_config.mwl.timeout),
 					))),
+					mpps: Some(Box::new(DimseMppsService::new(
+						pool.to_owned(),
+						Duration::from_millis(ae_config.mpps.timeout),
+					))),
 				}
 			}
 			#[cfg(feature = "s3")]
@@ -88,6 +95,7 @@ where
 					wado: Some(Box::new(S3WadoService::new(&config))),
 					stow: None,
 					mwl: None,
+					mpps: None,
 				}
 			}
 		};

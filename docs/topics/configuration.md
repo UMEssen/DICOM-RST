@@ -197,6 +197,8 @@ aets:
       timeout: 3000
     stow-rs:
       timeout: 3000
+    mpps-rs:
+      timeout: 3000
 ```
 
 Each AET (regardless of the backend) has additional settings specific to the DICOMweb endpoints.
@@ -235,6 +237,11 @@ Each AET (regardless of the backend) has additional settings specific to the DIC
     How many milliseconds to wait until a STOW-RS request should time out.
     This is the timeout for a single operation (e.g. receiving a DIMSE-C response primitive).
     If you want to set a timeout for the total execution time, use the <code>server.http.request-timeout</code> option instead.
+    </def>
+    <def title="mpps-rs.timeout" id="dicomweb.mpps-rs.timeout">
+    How many milliseconds to wait until a MPPS-RS request should time out.
+    This is the timeout for a single operation (e.g. receiving a N-CREATE-RSP, N-SET-RSP or N-GET-RSP).
+    Defaults to <code>30000</code>.
     </def>
 </deflist>
 

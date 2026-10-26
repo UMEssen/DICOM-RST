@@ -177,6 +177,25 @@ https://www.dicomstandard.org/news-dir/current/docs/sups/sup246.pdf
 | limit         | Return only {n} results                 |       ✅       |
 | offset        | Skip {n} results                        |       ✅       |
 
+### Report Modality Performed Procedure Steps (MPPS-RS)
+
+https://dicom.nema.org/medical/dicom/current/output/chtml/part18/chapter_15.html
+
+The DIMSE backend translates the transactions into N-CREATE, N-SET and N-GET requests of the
+Modality Performed Procedure Step SOP Classes.
+
+#### Transactions
+
+| Transaction | Method | URI Template                                                   | Support Status |
+| ----------- | ------ | -------------------------------------------------------------- | :------------: |
+| Create      | POST   | `/modality-performed-procedure-steps/{mppsUID}`                |       ✅       |
+| Update      | POST   | `/modality-performed-procedure-steps/{mppsUID}?update`         |       ✅       |
+| Retrieve    | GET    | `/modality-performed-procedure-steps/{mppsUID}{?includefield}` |      ✅¹       |
+
+¹ Requires a PACS that supports the Modality Performed Procedure Step Retrieve SOP Class.
+
+Only the `application/dicom+json` media type is supported.
+
 ### Manage worklist items (UPS-RS)
 
 https://www.dicomstandard.org/using/dicomweb/workflow-ups-rs
