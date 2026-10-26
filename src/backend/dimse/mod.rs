@@ -4,6 +4,8 @@
 //!   It depends on a store service class provider that must run in the background.
 //! - STOR-RS is implemented as a store service class user (C-STORE service).
 //! - MWL-RS is implemented as a find service class user (C-FIND service).
+//! - MPPS-RS is implemented as a modality performed procedure step service class user
+//!   (N-CREATE, N-SET and N-GET services).
 //!
 
 mod cfind;
@@ -11,6 +13,7 @@ pub mod cmove;
 mod cstore;
 
 pub mod association;
+pub mod mpps;
 pub mod mwl;
 pub mod qido;
 pub mod stow;
