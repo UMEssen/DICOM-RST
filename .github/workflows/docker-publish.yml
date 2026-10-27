@@ -18,11 +18,19 @@ jobs:
         include:
           - dockerfile: Dockerfile
             suffix: ""
+            features: mimalloc
           - dockerfile: Dockerfile-s3
             suffix: "-s3"
+            features: s3,mimalloc
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Install cargo-about
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-about@0.9.3
+      - name: Generate third-party licenses
+        run: cargo about generate --features ${{ matrix.features }} --locked --fail about.hbs -o licenses.html
       - name: Log in to the Container registry
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
         with:
