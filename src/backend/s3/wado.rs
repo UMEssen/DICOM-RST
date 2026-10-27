@@ -12,13 +12,13 @@ use aws_config::{AppName, Region};
 use aws_sdk_s3::config::BehaviorVersion;
 use bytes::Buf;
 use dicom::object::FileDicomObject;
-use futures::StreamExt;
+use futures::{StreamExt, TryFutureExt};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::log::trace;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
-use super::S3ClientExt;
+use super::list_dicom_objects;
 
 pub struct S3WadoService {
 	s3: Arc<aws_sdk_s3::Client>,
@@ -78,41 +78,29 @@ impl WadoService for S3WadoService {
 		let client = self.s3.clone();
 		let bucket = self.bucket.clone();
 
-		let objects = client
-			.collect_objects()
-			.bucket(&self.bucket)
-			.prefix(prefix)
-			.send()
-			.await
-			.map_err(|err| RetrieveError::Backend { source: err })?;
-		info!("Found {} objects.", objects.len());
+		let mut objects = Box::pin(list_dicom_objects(&client, &bucket, prefix).peekable());
+		// a failing first listing page fails the request instead of the response body
+		if let Some(Err(err)) = objects.as_mut().next_if(Result::is_err).await {
+			return Err(RetrieveError::Backend { source: err.into() });
+		}
 
-		let stream = futures::stream::iter(objects)
+		let stream = objects
 			.map(move |object| {
 				let client = client.clone();
 				let bucket = bucket.clone();
-				trace!("Streaming {}", object.key.as_ref().unwrap());
-				tokio::spawn(async move {
-					let object = client
-						.get_object()
-						.bucket(&bucket)
-						.key(object.key.unwrap())
-						.send()
-						.await
-						.unwrap();
-
-					// TODO: Do not unwrap
-					let bytes = object.body.collect().await.unwrap().reader();
-					Result::<_, MoveError>::Ok(Arc::new(
-						FileDicomObject::from_reader(bytes).unwrap(),
-					))
+				async move {
+					let key = object?.key.unwrap_or_default();
+					trace!("Streaming {key}");
+					let object = client.get_object().bucket(&bucket).key(key).send().await?;
+					let bytes = object.body.collect().await?.reader();
+					anyhow::Ok(Arc::new(FileDicomObject::from_reader(bytes)?))
+				}
+				.map_err(|err| {
+					error!("{err:?}");
+					MoveError::OperationFailed
 				})
 			})
-			.buffer_unordered(self.concurrency)
-			.map(|res| {
-				res.map_err(|_| MoveError::OperationFailed)
-					.and_then(|res| res)
-			});
+			.buffer_unordered(self.concurrency);
 
 		Ok(InstanceResponse {
 			stream: stream.boxed(),
