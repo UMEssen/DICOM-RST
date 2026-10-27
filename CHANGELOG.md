@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - S3 retrieves no longer wait for the full object listing before streaming the first instance (#77).
+- S3 instance retrieves now list objects by the prefix `{study}/{series}/{instance}.dcm` instead of `{study}/{series}/{instance}`.
 
 ## [0.3.3] - 2026-09-28
 
