@@ -5,6 +5,15 @@ on:
 jobs:
   check-rust-build:
     runs-on: ubuntu-latest
+    services:
+      seaweedfs:
+        image: chrislusf/seaweedfs:4.51
+        ports:
+          - 8333:8333
+        options: >-
+          --health-cmd "curl -fsS -o /dev/null http://127.0.0.1:8333/healthz || exit 1"
+          --health-interval 2s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -21,11 +30,11 @@ jobs:
           cargo fmt --version
           cargo clippy --version
 
-      - name: cargo check
-        run: cargo check
+      - name: cargo check (default features)
+        run: cargo check --all-targets
 
       - name: cargo test
-        run: cargo test
+        run: cargo test --all-features
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
