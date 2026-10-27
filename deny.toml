@@ -1,58 +1,43 @@
-targets = []
-all-features = false
-no-default-features = false
-feature-depth = 1
+[graph]
+all-features = true
 
 [advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
-ignore = []
+unmaintained = "all"
+unsound = "all"
+ignore = [
+    { id = "RUSTSEC-2021-0153", reason = "encoding is used by dicom-encoding (dicom-rs); no maintained replacement upstream yet" },
+    { id = "RUSTSEC-2024-0436", reason = "paste is used by rav1e (image, via dicom-pixeldata); proc-macro only" },
+]
 
 [licenses]
-unlicensed = "deny"
 allow = [
-    "MIT",
     "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "CC0-1.0",
     "ISC",
-    "Unicode-DFS-2016"
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
 ]
-deny = []
-copyleft = "deny"
-allow-osi-fsf-free = "neither"
-default = "deny"
-confidence-threshold = 0.9
-exceptions = []
+# licenses needed by a single crate only
+exceptions = [
+    { allow = [
+        "IJG",
+    ], crate = "jpeg-encoder" },
+    { allow = [
+        "NCSA",
+    ], crate = "libfuzzer-sys" },
+]
 
-[licenses.private]
-ignore = false
-registries = []
+confidence-threshold = 0.93
 
 [bans]
+# duplicates come from ecosystem-wide version splits (e.g. syn 2/3, digest 0.10/0.11) between dependencies
 multiple-versions = "warn"
-wildcards = "allow"
-highlight = "all"
-workspace-default-features = "allow"
-external-default-features = "allow"
-allow = []
-deny = []
-skip = []
-skip-tree = []
+wildcards = "deny"
 
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
-
-[sources.allow-org]
-github = [""]
-gitlab = [""]
-bitbucket = [""]
