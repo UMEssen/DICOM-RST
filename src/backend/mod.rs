@@ -82,6 +82,7 @@ where
 					))),
 					stgcmt: Some(Box::new(DimseStgcmtService::new(
 						pool.to_owned(),
+						ae_config.aet.clone(),
 						Duration::from_millis(ae_config.stgcmt.timeout),
 						Duration::from_millis(ae_config.stgcmt.event_report_timeout),
 						state.stgcmt_store,

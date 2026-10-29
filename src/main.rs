@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run(config: AppConfig) -> anyhow::Result<()> {
 	let mediator = MoveMediator::new(&config);
 	let pools = AssociationPools::new(&config);
-	let stgcmt_store = StorageCommitmentStore::new();
+	let stgcmt_store = StorageCommitmentStore::new(&config.server.stgcmt);
 
 	let app_state = AppState {
 		config: config.clone(),

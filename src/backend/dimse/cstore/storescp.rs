@@ -122,7 +122,13 @@ impl StoreServiceClassProvider {
 				.context("Missing tag COMMAND_FIELD (0000,0100)")?;
 
 			if command_field == COMMAND_FIELD_N_EVENT_REPORT_REQUEST {
-				handle_event_report(&association, message, &inner.stgcmt_store).await?;
+				handle_event_report(
+					&association,
+					association.peer_ae_title(),
+					message,
+					&inner.stgcmt_store,
+				)
+				.await?;
 				continue;
 			}
 

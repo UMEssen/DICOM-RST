@@ -249,6 +249,8 @@ pub struct ServerConfig {
 	pub aet: AE,
 	pub http: HttpServerConfig,
 	pub dimse: Vec<DimseServerConfig>,
+	#[serde(default)]
+	pub stgcmt: StgcmtStoreConfig,
 }
 
 impl Default for ServerConfig {
@@ -257,6 +259,28 @@ impl Default for ServerConfig {
 			aet: AE::from(DEFAULT_AET),
 			http: HttpServerConfig::default(),
 			dimse: vec![DimseServerConfig::default()],
+			stgcmt: StgcmtStoreConfig::default(),
+		}
+	}
+}
+
+/// Limits for the in-memory store of Storage Commitment transactions, shared by all AEs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct StgcmtStoreConfig {
+	/// How long (in milliseconds) a transaction is kept after its last update, i.e. after it was
+	/// submitted or after its result arrived.
+	pub ttl: u64,
+	/// Maximum number of transactions to keep. On overflow, the least recently updated
+	/// transaction is dropped.
+	pub max_transactions: usize,
+}
+
+impl Default for StgcmtStoreConfig {
+	fn default() -> Self {
+		Self {
+			ttl: 86_400_000, // 24 h
+			max_transactions: 10_000,
 		}
 	}
 }

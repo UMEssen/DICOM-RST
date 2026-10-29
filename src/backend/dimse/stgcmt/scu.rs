@@ -7,7 +7,7 @@ use crate::backend::dimse::stgcmt::{
 use crate::backend::dimse::{
 	DicomMessageReader, DicomMessageWriter, ReadError, StatusType, WriteError,
 };
-use crate::types::{UI, US};
+use crate::types::{AE, UI, US};
 use association::client::ClientAssociation;
 use association::pool::{
 	AssociationManager, AssociationPool, Object, PoolError, PresentationParameter,
@@ -21,6 +21,8 @@ use tracing::{debug, trace, warn};
 
 pub struct StorageCommitmentServiceClassUser {
 	pool: AssociationPool,
+	/// The AE the pool connects to, which receives the N-ACTION-RQ.
+	aet: AE,
 	timeout: Duration,
 	event_report_timeout: Duration,
 	store: StorageCommitmentStore,
@@ -29,12 +31,14 @@ pub struct StorageCommitmentServiceClassUser {
 impl StorageCommitmentServiceClassUser {
 	pub const fn new(
 		pool: AssociationPool,
+		aet: AE,
 		timeout: Duration,
 		event_report_timeout: Duration,
 		store: StorageCommitmentStore,
 	) -> Self {
 		Self {
 			pool,
+			aet,
 			timeout,
 			event_report_timeout,
 			store,
@@ -72,6 +76,7 @@ impl StorageCommitmentServiceClassUser {
 			// is handled by the Store SCP.
 			tokio::spawn(Self::await_event_report(
 				association,
+				self.aet.clone(),
 				self.store.clone(),
 				self.event_report_timeout,
 			));
@@ -106,6 +111,7 @@ impl StorageCommitmentServiceClassUser {
 	/// then discards the association.
 	async fn await_event_report(
 		mut association: Object<AssociationManager>,
+		aet: AE,
 		store: StorageCommitmentStore,
 		timeout: Duration,
 	) {
@@ -118,7 +124,10 @@ impl StorageCommitmentServiceClassUser {
 					.and_then(Result::ok);
 
 				if command_field == Some(COMMAND_FIELD_N_EVENT_REPORT_REQUEST) {
-					if let Err(err) = handle_event_report(&*association, message, &store).await {
+					// The peer of this association is the AE the N-ACTION-RQ was sent to.
+					if let Err(err) =
+						handle_event_report(&*association, &aet, message, &store).await
+					{
 						warn!("Failed to handle N-EVENT-REPORT-RQ: {err}");
 					}
 				} else {
@@ -142,6 +151,25 @@ pub enum CommitError {
 	Association(#[from] PoolError<AssociationError>),
 	#[error("N-ACTION-RSP indicated failure (status 0x{0:04X})")]
 	Failure(US),
+}
+
+impl CommitError {
+	/// Whether the N-ACTION-RQ may have been received and accepted by the peer despite this
+	/// error, in which case the peer may still send an N-EVENT-REPORT-RQ.
+	pub const fn may_have_been_accepted(&self) -> bool {
+		match self {
+			// No association, or the N-ACTION-RSP explicitly rejected the request.
+			Self::Association(_) | Self::Failure(_) => false,
+			// The request could not be encoded completely, so the peer cannot have accepted it.
+			Self::Write(err)
+				if matches!(**err, WriteError::Writer(_) | WriteError::Negotiation(_)) =>
+			{
+				false
+			}
+			// The request was (possibly partially) sent, but the N-ACTION-RSP was not received.
+			Self::Write(_) | Self::Read(_) => true,
+		}
+	}
 }
 
 impl From<ReadError> for CommitError {

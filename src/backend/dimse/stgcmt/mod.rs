@@ -14,7 +14,7 @@ use dicom::object::mem::InMemElement;
 use dicom::object::InMemDicomObject;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::info;
+use tracing::{info, warn};
 
 pub mod scu;
 pub mod service;
@@ -34,6 +34,10 @@ pub const ACTION_TYPE_ID_STORAGE_COMMITMENT_REQUEST: US = 1;
 #[allow(unused)]
 pub const EVENT_TYPE_ID_STORAGE_COMMITMENT_COMPLETE_FAILURES_EXIST: US = 2;
 
+/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part07/chapter_C.html>
+pub const STATUS_SUCCESS: US = 0x0000;
+pub const STATUS_PROCESSING_FAILURE: US = 0x0110;
+
 /// Handles an inbound N-EVENT-REPORT-RQ, which reports the (asynchronous) result of a
 /// previously sent Storage Commitment N-ACTION-RQ, and responds with an N-EVENT-REPORT-RSP.
 ///
@@ -41,8 +45,13 @@ pub const EVENT_TYPE_ID_STORAGE_COMMITMENT_COMPLETE_FAILURES_EXIST: US = 2;
 /// [`crate::backend::dimse::StoreServiceClassProvider`] on a new association, or on the
 /// association that carried the N-ACTION-RQ, if it is still open.
 /// See [`scu::StorageCommitmentServiceClassUser`].
+///
+/// The result is only recorded if it is reported by the AE the N-ACTION-RQ was sent to
+/// (PS3.4 J.3.3.1.2 Note 2), given as `calling_aet`. Otherwise, the N-EVENT-REPORT-RSP indicates
+/// a processing failure.
 pub async fn handle_event_report<A: Association + Sync>(
 	association: &A,
+	calling_aet: &str,
 	message: DicomMessage,
 	store: &StorageCommitmentStore,
 ) -> anyhow::Result<()> {
@@ -51,16 +60,24 @@ pub async fn handle_event_report<A: Association + Sync>(
 
 	info!(
 		transaction_uid = request.transaction_uid,
+		calling_aet,
 		event_type_id = request.event_type_id,
 		successes = request.result.referenced_sequence.len(),
 		failures = request.result.failed_sequence.len(),
 		"Received N-EVENT-REPORT-RQ"
 	);
 
-	store.complete(request.transaction_uid, request.result);
+	let status = match store.complete(&request.transaction_uid, calling_aet, request.result) {
+		Ok(()) => STATUS_SUCCESS,
+		Err(err) => {
+			warn!("Rejected N-EVENT-REPORT-RQ: {err}");
+			STATUS_PROCESSING_FAILURE
+		}
+	};
 
 	let response = EventReportResponse {
 		message_id: request.message_id,
+		status,
 	};
 
 	association
@@ -273,6 +290,7 @@ impl TryFrom<DicomMessage> for EventReportRequest {
 /// N-EVENT-REPORT-RSP
 pub struct EventReportResponse {
 	pub message_id: US,
+	pub status: US,
 }
 
 impl From<EventReportResponse> for DicomMessage {
@@ -283,7 +301,7 @@ impl From<EventReportResponse> for DicomMessage {
             DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [COMMAND_FIELD_N_EVENT_REPORT_RESPONSE])),
             DataElement::new(tags::MESSAGE_ID_BEING_RESPONDED_TO, VR::US, dicom_value!(U16, [response.message_id])),
             DataElement::new(tags::COMMAND_DATA_SET_TYPE, VR::US, dicom_value!(U16, [DATA_SET_MISSING])),
-            DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0u16])),
+            DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [response.status])),
             DataElement::new(tags::AFFECTED_SOP_INSTANCE_UID, VR::UI, dicom_value!(Str, uids::STORAGE_COMMITMENT_PUSH_MODEL_INSTANCE)),
         ]);
 
