@@ -2,9 +2,25 @@ name: rust-checks
 on:
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   check-rust-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # required by upload-sarif
+      actions: read
+      security-events: write
+    services:
+      seaweedfs:
+        image: chrislusf/seaweedfs:4.51
+        ports:
+          - 8333:8333
+        options: >-
+          --health-cmd "curl -fsS -o /dev/null http://127.0.0.1:8333/healthz || exit 1"
+          --health-interval 2s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -21,11 +37,11 @@ jobs:
           cargo fmt --version
           cargo clippy --version
 
-      - name: cargo check
-        run: cargo check
+      - name: cargo check (default features)
+        run: cargo check --all-targets
 
       - name: cargo test
-        run: cargo test
+        run: cargo test --all-features
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
@@ -43,3 +59,9 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2

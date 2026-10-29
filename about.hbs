@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>DICOM-RST Third-Party Licenses</title>
+    <style>
+        body {
+            margin: 0;
+            background: #f8fafc;
+            color: #283142;
+            font-family: Geist, ui-sans-serif, system-ui, sans-serif;
+        }
+        header {
+            background: #1a2332;
+            color: #fff;
+            padding: 4rem 1rem;
+            text-align: center;
+        }
+        header h1 {
+            margin: 0 0 1rem;
+        }
+        header span {
+            color: #c0392b;
+        }
+        main {
+            max-width: 56rem;
+            margin: 0 auto;
+            padding: 3rem 1rem;
+        }
+        a {
+            color: #c0392b;
+        }
+        .overview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0;
+            list-style: none;
+        }
+        .overview a {
+            display: block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            background: #c0392b;
+            color: #fff;
+            font-size: 0.875rem;
+            text-decoration: none;
+        }
+        .license {
+            margin-bottom: 1.5rem;
+            padding: 1.5rem;
+            border: 1px solid #f3f4f6;
+            border-radius: 0.75rem;
+            background: #fff;
+        }
+        .license h3 {
+            margin-top: 0;
+        }
+        .license pre {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: #f8fafc;
+            color: #4a5565;
+            font-family: "Geist Mono", ui-monospace, monospace;
+            font-size: 0.75rem;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Third-Party Licenses</h1>
+        <p>Licenses of the projects used in <span>DICOM-RST</span>.</p>
+    </header>
+    <main>
+        <h2>Overview</h2>
+        <ul class="overview">
+            {{#each overview}}
+            <li><a href="#{{id}}">{{name}} ({{count}})</a></li>
+            {{/each}}
+        </ul>
+
+        <h2>License Texts</h2>
+        {{#each licenses}}
+        <section class="license">
+            <h3 id="{{id}}">{{name}}</h3>
+            <p>Used by:</p>
+            <ul>
+                {{#each used_by}}
+                <li><a href="{{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}}">{{crate.name}} {{crate.version}}</a></li>
+                {{/each}}
+            </ul>
+            <pre>{{text}}</pre>
+        </section>
+        {{/each}}
+    </main>
+</body>
+
+</html>

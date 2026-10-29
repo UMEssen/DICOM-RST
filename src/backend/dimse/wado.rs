@@ -295,7 +295,9 @@ impl<'a> DicomMultipartStream<'a> {
 		let transfer_syntax_uid =
 			transfer_syntax_uid.and_then(|ts_uid| TransferSyntaxRegistry.get(ts_uid));
 		let part_boundary = boundary.to_owned();
-		let close_delimiter = format!("--{boundary}--").into_bytes();
+		// RFC 2046 makes the trailing CRLF optional, but some clients (e.g. multipart-rs)
+		// drop the last part without it.
+		let close_delimiter = format!("--{boundary}--\r\n").into_bytes();
 		#[allow(clippy::result_large_err)]
 		let multipart_stream = stream
 			.map(move |item| {
@@ -381,7 +383,7 @@ mod tests {
 		let body = chunks.concat();
 
 		assert!(body.starts_with(b"--b3f7c9d1e5a24868\r\n"));
-		assert!(body.ends_with(b"\r\n--b3f7c9d1e5a24868--"));
+		assert!(body.ends_with(b"\r\n--b3f7c9d1e5a24868--\r\n"));
 		// The previously hardcoded delimiter must be gone.
 		assert!(!body
 			.windows(b"--boundary".len())
