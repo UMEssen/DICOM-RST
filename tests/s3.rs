@@ -15,16 +15,18 @@ use futures::TryStreamExt;
 use std::collections::BTreeSet;
 
 /// (study, series, instance, test file) of every stored instance
-const INSTANCES: [(&str, &str, &str, &str); 3] = [
+const INSTANCES: [(&str, &str, &str, &str); 4] = [
 	("1.2.3", "1.2.3.1", "1.2.3.1.10", "pydicom/CT_small.dcm"),
 	("1.2.3", "1.2.3.1", "1.2.3.1.11", "pydicom/CT_small.dcm"),
+	// 1.2.3.1.10 is a prefix of this UID, see `retrieves_instance`
+	("1.2.3", "1.2.3.1", "1.2.3.1.100", "pydicom/CT_small.dcm"),
 	("1.2.3", "1.2.3.2", "1.2.3.2.10", "pydicom/MR_small.dcm"),
 ];
 
 #[tokio::test]
 async fn retrieves_study_instances() -> anyhow::Result<()> {
 	with_s3_environment(async |client| {
-		let uids: BTreeSet<_> = client
+		let uids: Vec<_> = client
 			.retrieve_study("1.2.3")
 			.run()
 			.await?
@@ -32,14 +34,15 @@ async fn retrieves_study_instances() -> anyhow::Result<()> {
 			.try_collect()
 			.await?;
 
-		assert_eq!(
-			uids,
-			BTreeSet::from([
-				"1.2.3.1.10".into(),
-				"1.2.3.1.11".into(),
-				"1.2.3.2.10".into()
-			])
-		);
+		let expected: BTreeSet<String> = BTreeSet::from([
+			"1.2.3.1.10".into(),
+			"1.2.3.1.11".into(),
+			"1.2.3.1.100".into(),
+			"1.2.3.2.10".into(),
+		]);
+		// one part per stored object, so duplicates are caught before the set check
+		assert_eq!(uids.len(), expected.len());
+		assert_eq!(uids.into_iter().collect::<BTreeSet<_>>(), expected);
 		Ok(())
 	})
 	.await
@@ -48,7 +51,7 @@ async fn retrieves_study_instances() -> anyhow::Result<()> {
 #[tokio::test]
 async fn retrieves_series_instances() -> anyhow::Result<()> {
 	with_s3_environment(async |client| {
-		let uids: BTreeSet<_> = client
+		let uids: Vec<_> = client
 			.retrieve_series("1.2.3", "1.2.3.1")
 			.run()
 			.await?
@@ -56,10 +59,14 @@ async fn retrieves_series_instances() -> anyhow::Result<()> {
 			.try_collect()
 			.await?;
 
-		assert_eq!(
-			uids,
-			BTreeSet::from(["1.2.3.1.10".into(), "1.2.3.1.11".into()])
-		);
+		let expected: BTreeSet<String> = BTreeSet::from([
+			"1.2.3.1.10".into(),
+			"1.2.3.1.11".into(),
+			"1.2.3.1.100".into(),
+		]);
+		// one part per stored object, so duplicates are caught before the set check
+		assert_eq!(uids.len(), expected.len());
+		assert_eq!(uids.into_iter().collect::<BTreeSet<_>>(), expected);
 		Ok(())
 	})
 	.await
@@ -68,15 +75,18 @@ async fn retrieves_series_instances() -> anyhow::Result<()> {
 #[tokio::test]
 async fn retrieves_instance() -> anyhow::Result<()> {
 	with_s3_environment(async |client| {
-		let instance = client
-			.retrieve_instance("1.2.3", "1.2.3.1", "1.2.3.1.10")
+		// retrieve_instance only reads the first part of the response, so request the instance
+		// URL through retrieve_series to see every part
+		let uids: Vec<_> = client
+			.retrieve_series("1.2.3", "1.2.3.1/instances/1.2.3.1.10")
 			.run()
+			.await?
+			.map_ok(|instance| instance.meta().media_storage_sop_instance_uid().to_owned())
+			.try_collect()
 			.await?;
 
-		assert_eq!(
-			instance.meta().media_storage_sop_instance_uid(),
-			"1.2.3.1.10"
-		);
+		// must not include 1.2.3.1.100, which shares the prefix 1.2.3.1.10
+		assert_eq!(uids, ["1.2.3.1.10"]);
 		Ok(())
 	})
 	.await
@@ -101,7 +111,7 @@ async fn returns_404_for_unknown_resources() -> anyhow::Result<()> {
 			})
 		));
 
-		// a prefix of the stored instance UID 1.2.3.1.10
+		// a prefix of the stored instance UIDs 1.2.3.1.10, 1.2.3.1.11 and 1.2.3.1.100
 		let instance = client
 			.retrieve_instance("1.2.3", "1.2.3.1", "1.2.3.1.1")
 			.run()
