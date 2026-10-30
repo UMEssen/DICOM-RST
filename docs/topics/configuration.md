@@ -143,7 +143,8 @@ server:
     <def title="server.http.max-part-size" id="server.http.max-part-size">
         The maximum allowed size in bytes of a single part (i.e. a single DICOM instance) of a STOW-RS request.
         Uses <code>50000000</code> (50 MB) by default.
-        Instances are stored one at a time, so this setting bounds the memory used per STOW-RS request.
+        Instances are received while the previous instance is being stored, so a STOW-RS request holds
+        at most a few instances in memory at once. This setting therefore bounds the memory used per request.
     </def>
     <def title="server.http.request-timeout" id="server.http.request.timeout">
         The maximum allowed (total) time for a HTTP request in milliseconds before a timeout occurs. This applies to all endpoints.
