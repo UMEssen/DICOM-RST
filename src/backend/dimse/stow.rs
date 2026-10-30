@@ -4,6 +4,7 @@ use crate::backend::dimse::cstore::storescu::StoreServiceClassUser;
 use crate::types::UI;
 use association::pool::AssociationPool;
 use async_trait::async_trait;
+use futures::TryStreamExt;
 use std::time::Duration;
 use tracing::info;
 
@@ -20,11 +21,11 @@ impl DimseStowService {
 
 #[async_trait]
 impl StowService for DimseStowService {
-	async fn store(&self, request: StoreRequest) -> Result<StoreResponse, StoreError> {
+	async fn store(&self, mut request: StoreRequest) -> Result<StoreResponse, StoreError> {
 		let mut referenced_sequence = Vec::new();
 		let mut failed_sequence = Vec::new();
 
-		for instance in request.instances {
+		while let Some(instance) = request.instances.try_next().await? {
 			let sop_instance_uid = UI::from(instance.meta().media_storage_sop_instance_uid());
 			let sop_class_uid = UI::from(instance.meta().media_storage_sop_class_uid());
 

@@ -1,4 +1,5 @@
-use axum::extract::{FromRequest, Request};
+use crate::AppState;
+use axum::extract::{FromRef, FromRequest, Request};
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -51,11 +52,12 @@ impl IntoResponse for DicomMultipartRejection {
 
 impl<S> FromRequest<S> for DicomMultipart<'_>
 where
+	AppState: FromRef<S>,
 	S: Send + Sync,
 {
 	type Rejection = DicomMultipartRejection;
 
-	async fn from_request(request: Request, _state: &S) -> Result<Self, Self::Rejection> {
+	async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
 		let boundary = request
 			.headers()
 			.get(CONTENT_TYPE)
@@ -65,8 +67,15 @@ where
 			.and_then(Result::ok)
 			.ok_or(Self::Rejection::InvalidBoundary)?;
 
+		// The size of the whole request body is limited by `DefaultBodyLimit` (max-upload-size),
+		// the size of each part (i.e. each DICOM instance) is limited here (max-part-size).
+		let max_part_size = AppState::from_ref(state).config.server.http.max_part_size;
+		let constraints = multer::Constraints::new()
+			.size_limit(multer::SizeLimit::new().per_field(max_part_size as u64));
+
 		let stream = request.with_limited_body().into_body();
-		let multipart = multer::Multipart::new(stream.into_data_stream(), boundary);
+		let multipart =
+			multer::Multipart::with_constraints(stream.into_data_stream(), boundary, constraints);
 		Ok(Self(multipart))
 	}
 }
