@@ -9,10 +9,13 @@ use dicom::dicom_value;
 use dicom::dictionary_std::tags;
 use dicom::object::mem::InMemElement;
 use dicom::object::{FileDicomObject, InMemDicomObject};
+use futures::stream::BoxStream;
 use thiserror::Error;
 
 pub struct StoreRequest {
-	pub instances: Vec<FileDicomObject<InMemDicomObject>>,
+	/// The instances to store. They are read lazily from the request body, so that
+	/// backends can store each instance without holding the whole upload in memory.
+	pub instances: BoxStream<'static, Result<FileDicomObject<InMemDicomObject>, StoreError>>,
 }
 
 /// <https://dicom.nema.org/medical/dicom/current/output/html/part03.html#table_10-11>

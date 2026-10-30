@@ -2,6 +2,7 @@ use crate::api::stow::{StoreError, StoreRequest};
 use crate::backend::ServiceProvider;
 use crate::utils::multipart::DicomMultipart;
 use crate::AppState;
+use async_stream::try_stream;
 use axum::body::Body;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::StatusCode;
@@ -34,15 +35,18 @@ async fn studies(
 			.into_response());
 	};
 
-	let mut instances = Vec::new();
+	// Parts are only read when the backend polls the stream, so that only one instance per
+	// request is held in memory instead of the whole multipart body.
+	let instances = try_stream! {
+		while let Some(field) = multipart.next_field().await? {
+			let data = field.bytes().await?;
+			yield FileDicomObject::from_reader(data.reader())?;
+		}
+	};
 
-	while let Some(field) = multipart.next_field().await? {
-		let data = field.bytes().await?;
-		let file = FileDicomObject::from_reader(data.reader())?;
-		instances.push(file);
-	}
-
-	let request = StoreRequest { instances };
+	let request = StoreRequest {
+		instances: Box::pin(instances),
+	};
 	let response = stow.store(request).await?;
 	let json = DicomJson::from(InMemDicomObject::from(response));
 
