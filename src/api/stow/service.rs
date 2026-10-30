@@ -94,8 +94,10 @@ pub trait StowService: Sync + Send {
 
 #[derive(Debug, Error)]
 pub enum StoreError {
-	#[error("The file exceeds the configured upload size limit")]
+	#[error("The request exceeds the configured upload size limit")]
 	UploadLimitExceeded,
+	#[error("A part of the request exceeds the configured part size limit of {limit} bytes")]
+	PartLimitExceeded { limit: u64 },
 	#[error(transparent)]
 	Stream(multer::Error),
 	#[error(transparent)]
@@ -108,6 +110,12 @@ impl IntoResponse for StoreError {
 			Self::UploadLimitExceeded => Response::builder()
 				.status(StatusCode::PAYLOAD_TOO_LARGE)
 				.body(Body::from("Upload limit exceeded"))
+				.unwrap(),
+			Self::PartLimitExceeded { limit } => Response::builder()
+				.status(StatusCode::PAYLOAD_TOO_LARGE)
+				.body(Body::from(format!(
+					"Part limit exceeded: each instance must not exceed {limit} bytes"
+				)))
 				.unwrap(),
 			Self::Stream(err) => Response::builder()
 				.status(StatusCode::BAD_REQUEST)
@@ -125,6 +133,10 @@ impl IntoResponse for StoreError {
 
 impl From<multer::Error> for StoreError {
 	fn from(error: multer::Error) -> Self {
+		if let multer::Error::FieldSizeExceeded { limit, .. } = error {
+			return Self::PartLimitExceeded { limit };
+		}
+
 		if let multer::Error::StreamReadFailed(stream_error) = &error {
 			let is_limit_exceeded = stream_error
 				.downcast_ref::<axum::Error>()

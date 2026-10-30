@@ -172,6 +172,44 @@ async fn returns_413_if_max_upload_size_is_exceeded() -> anyhow::Result<()> {
 	.await
 }
 
+#[tokio::test]
+async fn returns_413_if_max_part_size_is_exceeded() -> anyhow::Result<()> {
+	let config = "
+        server:
+          http:
+            port: 0
+            max-part-size: 1
+          dimse:
+            - aet: DICOM-RST
+              interface: 0.0.0.0
+              port: 0
+        aets:
+          - aet: ORTHANC
+            host: 127.0.0.1
+            port: ${ORTHANC_PORT}
+            backend: DIMSE
+	";
+
+	with_test_environment(config, async |client| {
+		let instance = open_file(dicom_test_files::path("pydicom/CT_small.dcm").unwrap()).unwrap();
+		let result = client
+			.store_instances()
+			.with_instances(futures::stream::iter([instance]))
+			.run()
+			.await;
+
+		assert!(matches!(
+			result,
+			Err(DicomWebError::HttpStatusFailure {
+				status_code: StatusCode::PAYLOAD_TOO_LARGE
+			})
+		));
+
+		Ok(())
+	})
+	.await
+}
+
 // Associations must be reused for subsequent instances instead of being rebuilt for every
 // single instance. Validating a pooled association must not require a DIMSE round trip, as
 // the association only negotiates a presentation context for the storage SOP class of the
