@@ -85,6 +85,7 @@ aws-smithy-types-convert = { version = "0.61.1", features = [
 testcontainers = "0.27.3"
 dicom-test-files = { version = "0.4.0", default-features = false }
 dicom-web = "0.6.0"
+reqwest = { version = "0.13.2", default-features = false, features = ["json"] }
 
 [lints.rust]
 unsafe_code = "forbid"

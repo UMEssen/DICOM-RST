@@ -31,6 +31,8 @@ pub struct ApplicationEntityConfig {
 	pub stow: StowConfig,
 	#[serde(default, rename = "mwl-rs")]
 	pub mwl: MwlConfig,
+	#[serde(default, rename = "stgcmt-rs")]
+	pub stgcmt: StgcmtConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -195,6 +197,27 @@ impl Default for MwlConfig {
 	}
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct StgcmtConfig {
+	/// Timeout for the N-ACTION-RQ/RSP round trip. The actual commitment result is delivered
+	/// later, out-of-band, as an N-EVENT-REPORT-RQ, and is not subject to this timeout.
+	pub timeout: u64,
+	/// How long to wait for an N-EVENT-REPORT-RQ on the association that carried the
+	/// N-ACTION-RQ before closing it. The association is not available to other requests in the
+	/// meantime. Results sent later on a new association are received by the Store SCP.
+	pub event_report_timeout: u64,
+}
+
+impl Default for StgcmtConfig {
+	fn default() -> Self {
+		Self {
+			timeout: 30_000,
+			event_report_timeout: 5_000,
+		}
+	}
+}
+
 impl AppConfig {
 	/// Loads the application configuration from the following sources:
 	/// 1. Defaults (defined in `defaults.toml`)
@@ -226,6 +249,8 @@ pub struct ServerConfig {
 	pub aet: AE,
 	pub http: HttpServerConfig,
 	pub dimse: Vec<DimseServerConfig>,
+	#[serde(default)]
+	pub stgcmt: StgcmtStoreConfig,
 }
 
 impl Default for ServerConfig {
@@ -234,6 +259,28 @@ impl Default for ServerConfig {
 			aet: AE::from(DEFAULT_AET),
 			http: HttpServerConfig::default(),
 			dimse: vec![DimseServerConfig::default()],
+			stgcmt: StgcmtStoreConfig::default(),
+		}
+	}
+}
+
+/// Limits for the in-memory store of Storage Commitment transactions, shared by all AEs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct StgcmtStoreConfig {
+	/// How long (in milliseconds) a transaction is kept after its last update, i.e. after it was
+	/// submitted or after its result arrived.
+	pub ttl: u64,
+	/// Maximum number of transactions to keep. On overflow, the least recently updated
+	/// transaction is dropped.
+	pub max_transactions: usize,
+}
+
+impl Default for StgcmtStoreConfig {
+	fn default() -> Self {
+		Self {
+			ttl: 86_400_000, // 24 h
+			max_transactions: 10_000,
 		}
 	}
 }

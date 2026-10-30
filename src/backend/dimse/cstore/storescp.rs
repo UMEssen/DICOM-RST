@@ -5,7 +5,9 @@ use crate::backend::dimse::cmove::{
 use crate::backend::dimse::cstore::{
 	CompositeStoreResponse, COMMAND_FIELD_COMPOSITE_STORE_REQUEST,
 };
-use crate::backend::dimse::{DicomMessageReader, DicomMessageWriter};
+use crate::backend::dimse::stgcmt::store::StorageCommitmentStore;
+use crate::backend::dimse::stgcmt::{handle_event_report, COMMAND_FIELD_N_EVENT_REPORT_REQUEST};
+use crate::backend::dimse::{DicomMessage, DicomMessageReader, DicomMessageWriter};
 use crate::config::DimseServerConfig;
 use crate::types::{AE, UI, US};
 use anyhow::Context;
@@ -27,15 +29,22 @@ pub struct StoreServiceClassProvider {
 struct InnerStoreServiceClassProvider {
 	mediator: MoveMediator,
 	subscribers: Vec<AE>,
+	stgcmt_store: StorageCommitmentStore,
 	config: DimseServerConfig,
 }
 
 impl StoreServiceClassProvider {
-	pub fn new(mediator: MoveMediator, subscribers: Vec<AE>, config: DimseServerConfig) -> Self {
+	pub fn new(
+		mediator: MoveMediator,
+		subscribers: Vec<AE>,
+		stgcmt_store: StorageCommitmentStore,
+		config: DimseServerConfig,
+	) -> Self {
 		Self {
 			inner: Arc::new(InnerStoreServiceClassProvider {
 				mediator,
 				subscribers,
+				stgcmt_store,
 				config,
 			}),
 		}
@@ -112,87 +121,110 @@ impl StoreServiceClassProvider {
 				.and_then(Result::ok)
 				.context("Missing tag COMMAND_FIELD (0000,0100)")?;
 
+			if command_field == COMMAND_FIELD_N_EVENT_REPORT_REQUEST {
+				handle_event_report(
+					&association,
+					association.peer_ae_title(),
+					message,
+					&inner.stgcmt_store,
+				)
+				.await?;
+				continue;
+			}
+
 			if command_field != COMMAND_FIELD_COMPOSITE_STORE_REQUEST {
 				return Err(anyhow::Error::msg(
-					"Unexpected Command Field. Only C-STORE-RQ is supported.",
+					"Unexpected Command Field. Only C-STORE-RQ and N-EVENT-REPORT-RQ are supported.",
 				));
 			}
 
-			let message_id = message
-				.command
-				.get(tags::MESSAGE_ID)
-				.map(InMemElement::to_int)
-				.and_then(Result::ok)
-				.unwrap_or(0);
+			Self::handle_store(&association, message, &pctx.transfer_syntax, &inner).await?;
+		}
+		Ok(())
+	}
 
-			let sop_class_uid = message
-				.command
-				.get(tags::AFFECTED_SOP_CLASS_UID)
-				.map(InMemElement::to_str)
-				.and_then(Result::ok)
-				.context("Missing tag AFFECTED_SOP_CLASS_UID (0000,0002)")?;
+	/// Handles an inbound C-STORE-RQ by publishing the received instance to all subscribers
+	/// and responding with a C-STORE-RSP.
+	async fn handle_store(
+		association: &ServerAssociation,
+		message: DicomMessage,
+		transfer_syntax: &str,
+		inner: &InnerStoreServiceClassProvider,
+	) -> anyhow::Result<()> {
+		let message_id = message
+			.command
+			.get(tags::MESSAGE_ID)
+			.map(InMemElement::to_int)
+			.and_then(Result::ok)
+			.unwrap_or(0);
 
-			let sop_instance_uid = message
-				.command
-				.get(tags::AFFECTED_SOP_INSTANCE_UID)
-				.map(InMemElement::to_str)
-				.and_then(Result::ok)
-				.context("Missing tag AFFECTED_SOP_INSTANCE_UID (0000,1000)")?;
+		let sop_class_uid = message
+			.command
+			.get(tags::AFFECTED_SOP_CLASS_UID)
+			.map(InMemElement::to_str)
+			.and_then(Result::ok)
+			.context("Missing tag AFFECTED_SOP_CLASS_UID (0000,0002)")?;
 
-			info!(
-				sop_instance_uid = sop_instance_uid.as_ref(),
-				sop_class_uid = sop_class_uid.as_ref(),
-				"Received instance"
-			);
-			let response = CompositeStoreResponse {
-				sop_instance_uid: UI::from(sop_instance_uid.clone()),
-				sop_class_uid: UI::from(sop_class_uid.clone()),
-				message_id,
-			};
+		let sop_instance_uid = message
+			.command
+			.get(tags::AFFECTED_SOP_INSTANCE_UID)
+			.map(InMemElement::to_str)
+			.and_then(Result::ok)
+			.context("Missing tag AFFECTED_SOP_INSTANCE_UID (0000,1000)")?;
 
-			let move_originator_id = message
-				.command
-				.get(tags::MOVE_ORIGINATOR_MESSAGE_ID)
-				.map(InMemElement::to_int::<US>)
-				.and_then(Result::ok);
+		info!(
+			sop_instance_uid = sop_instance_uid.as_ref(),
+			sop_class_uid = sop_class_uid.as_ref(),
+			"Received instance"
+		);
+		let response = CompositeStoreResponse {
+			sop_instance_uid: UI::from(sop_instance_uid.clone()),
+			sop_class_uid: UI::from(sop_class_uid.clone()),
+			message_id,
+		};
 
-			let file = message.data.unwrap().with_exact_meta(
-				FileMetaTableBuilder::new()
-					.media_storage_sop_class_uid(sop_class_uid.as_ref())
-					.media_storage_sop_instance_uid(sop_instance_uid.as_ref())
-					.transfer_syntax(&pctx.transfer_syntax)
-					.build()
-					.expect("FileMetaTableBuilder should contain required data"),
-			);
+		let move_originator_id = message
+			.command
+			.get(tags::MOVE_ORIGINATOR_MESSAGE_ID)
+			.map(InMemElement::to_int::<US>)
+			.and_then(Result::ok);
 
-			let file = Arc::new(file);
-			for sub_aet in &inner.subscribers {
-				trace!("Publishing sub-operation result to subscriber {sub_aet}");
-				let topic = SubscriptionTopic::new(AE::from(sub_aet), move_originator_id);
-				if let Err(err) = inner
-					.mediator
-					.publish(&topic, Ok(MoveSubOperation::Pending(Arc::clone(&file))))
-					.await
-				{
-					match err {
-						// The receiver can drop before C-MOVE ends, e.g. after rendering the first image.
-						MediatorError::ChannelClosed => debug!("{err}"),
-						MediatorError::MissingCallback { .. } => warn!("{err}"),
-					}
+		let file = message.data.unwrap().with_exact_meta(
+			FileMetaTableBuilder::new()
+				.media_storage_sop_class_uid(sop_class_uid.as_ref())
+				.media_storage_sop_instance_uid(sop_instance_uid.as_ref())
+				.transfer_syntax(transfer_syntax)
+				.build()
+				.expect("FileMetaTableBuilder should contain required data"),
+		);
+
+		let file = Arc::new(file);
+		for sub_aet in &inner.subscribers {
+			trace!("Publishing sub-operation result to subscriber {sub_aet}");
+			let topic = SubscriptionTopic::new(AE::from(sub_aet), move_originator_id);
+			if let Err(err) = inner
+				.mediator
+				.publish(&topic, Ok(MoveSubOperation::Pending(Arc::clone(&file))))
+				.await
+			{
+				match err {
+					// The receiver can drop before C-MOVE ends, e.g. after rendering the first image.
+					MediatorError::ChannelClosed => debug!("{err}"),
+					MediatorError::MissingCallback { .. } => warn!("{err}"),
 				}
 			}
-
-			// Only respond after publishing the instance: The C-MOVE-SCP sends the final C-MOVE-RSP
-			// once all C-STORE-RSPs were received. Responding earlier would allow the C-MOVE to be
-			// completed before the instance was published, so the retrieve would miss the instance.
-			association
-				.write_message(
-					response,
-					message.presentation_context_id,
-					Duration::from_secs(10),
-				)
-				.await?;
 		}
+
+		// Only respond after publishing the instance: The C-MOVE-SCP sends the final C-MOVE-RSP
+		// once all C-STORE-RSPs were received. Responding earlier would allow the C-MOVE to be
+		// completed before the instance was published, so the retrieve would miss the instance.
+		association
+			.write_message(
+				response,
+				message.presentation_context_id,
+				Duration::from_secs(10),
+			)
+			.await?;
 		Ok(())
 	}
 }

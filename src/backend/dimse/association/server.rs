@@ -1,8 +1,10 @@
 use super::{oneshot, AskPattern, Association, AssociationError, ChannelError, Command, Sender};
+use dicom::dictionary_std::uids;
 use dicom::transfer_syntax::TransferSyntaxRegistry;
+use dicom::ul::association::server::Negotiation;
 use dicom::ul::association::Association as _;
 use dicom::ul::pdu::Pdu;
-use dicom::ul::pdu::PresentationContextNegotiated;
+use dicom::ul::pdu::{PresentationContextNegotiated, RequestorRoles};
 use std::convert::identity;
 use std::io::ErrorKind;
 use std::{net::TcpStream, thread, time::Duration};
@@ -14,6 +16,7 @@ pub struct ServerAssociation {
 	channel: Sender<Command>,
 	presentation_contexts: Vec<PresentationContextNegotiated>,
 	tcp_stream: TcpStream,
+	peer_ae_title: String,
 }
 
 pub struct ServerAssociationOptions {
@@ -22,12 +25,36 @@ pub struct ServerAssociationOptions {
 	pub uncompressed: bool,
 }
 
+/// Negotiates the SCP/SCU roles of the association requestor (PS3.7 D.3.3.4).
+///
+/// A Storage Commitment SCP that delivers the N-EVENT-REPORT-RQ on a new association is the
+/// association requestor, but must still act as the SCP of the Storage Commitment Push Model
+/// SOP Class (PS3.4 J.3.3.1.2 Note 1), so it proposes the SCP role. We only accept that role, as
+/// we never act as a Storage Commitment SCP ourselves.
+/// For all other SOP Classes, the default roles (requestor is SCU) apply.
+struct RoleNegotiation;
+
+impl Negotiation for RoleNegotiation {
+	fn negotiate_roles(
+		&self,
+		sop_class_uid: &str,
+		_scu_role: bool,
+		scp_role: bool,
+	) -> Option<RequestorRoles> {
+		(sop_class_uid == uids::STORAGE_COMMITMENT_PUSH_MODEL).then_some(RequestorRoles {
+			scu: false,
+			scp: scp_role,
+		})
+	}
+}
+
 impl ServerAssociation {
 	pub async fn new(options: ServerAssociationOptions) -> Result<Self, AssociationError> {
 		let uuid = Uuid::new_v4();
 		let mut server_options = dicom::ul::ServerAssociationOptions::new()
 			.ae_title(options.aet.clone())
-			.promiscuous(true);
+			.promiscuous(true)
+			.with_negotiation(RoleNegotiation);
 
 		for syntax in TransferSyntaxRegistry.iter() {
 			if (options.uncompressed && syntax.is_codec_free())
@@ -56,13 +83,16 @@ impl ServerAssociation {
 						);
 
 						let pcs = association.presentation_contexts().to_vec();
+						let peer_ae_title = association.peer_ae_title().to_owned();
 
 						let stream = association
 							.inner_stream()
 							.try_clone()
 							.expect("TcpStream::clone");
 
-						connect_tx.send(Ok((stream, pcs))).map_err(|_value| ())?;
+						connect_tx
+							.send(Ok((stream, pcs, peer_ae_title)))
+							.map_err(|_value| ())?;
 						association
 					}
 					Err(e) => {
@@ -115,14 +145,20 @@ impl ServerAssociation {
 			})
 			.map_err(AssociationError::OsThread)?;
 
-		let (tcp_stream, presentation_contexts) =
+		let (tcp_stream, presentation_contexts, peer_ae_title) =
 			connect_result.await.expect("connect_result.await")?;
 
 		Ok(Self {
 			channel: tx,
 			presentation_contexts,
 			tcp_stream,
+			peer_ae_title,
 		})
+	}
+
+	/// The AE Title of the association requestor (Calling AE Title).
+	pub fn peer_ae_title(&self) -> &str {
+		&self.peer_ae_title
 	}
 }
 
