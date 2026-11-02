@@ -48,7 +48,8 @@ server:
   http:
     interface: 0.0.0.0
     port: 8080
-    max-upload-size: 50000000
+    max-upload-size: 5000000000
+    max-part-size: 50000000
     request-timeout: 60000
     graceful-shutdown: true
   dimse:
@@ -121,7 +122,8 @@ server:
   http:
     interface: 0.0.0.0
     port: 8080
-    max-upload-size: 50000000
+    max-upload-size: 5000000000
+    max-part-size: 50000000
     request-timeout: 60000
     graceful-shutdown: true
     base-path: /
@@ -135,8 +137,14 @@ server:
         The port for the HTTP server. Uses <code>8080</code> by default.
     </def>
     <def title="server.http.max-upload-size" id="server.http.max-upload-size">
-        The maximum allowed request body size in bytes. 
-        This setting can be used to limit the upload size of STOW-RS requests.
+        The maximum allowed request body size in bytes. Uses <code>5000000000</code> (5 GB) by default.
+        This setting can be used to limit the total upload size of STOW-RS requests.
+    </def>
+    <def title="server.http.max-part-size" id="server.http.max-part-size">
+        The maximum allowed size in bytes of a single part (i.e. a single DICOM instance) of a STOW-RS request.
+        Uses <code>50000000</code> (50 MB) by default.
+        Instances are received while the previous instance is being stored, so a STOW-RS request holds
+        at most a few instances in memory at once. This setting therefore bounds the memory used per request.
     </def>
     <def title="server.http.request-timeout" id="server.http.request.timeout">
         The maximum allowed (total) time for a HTTP request in milliseconds before a timeout occurs. This applies to all endpoints.

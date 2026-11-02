@@ -1694,7 +1694,7 @@ dependencies = [
  "mimalloc",
  "mime",
  "multer",
- "reqwest 0.13.3",
+ "reqwest 0.13.5",
  "sentry",
  "serde",
  "serde_json",

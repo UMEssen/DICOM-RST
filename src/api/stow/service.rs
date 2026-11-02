@@ -9,10 +9,13 @@ use dicom::dicom_value;
 use dicom::dictionary_std::tags;
 use dicom::object::mem::InMemElement;
 use dicom::object::{FileDicomObject, InMemDicomObject};
+use futures::stream::BoxStream;
 use thiserror::Error;
 
 pub struct StoreRequest {
-	pub instances: Vec<FileDicomObject<InMemDicomObject>>,
+	/// The instances to store. They are read lazily from the request body, so that
+	/// backends can store each instance without holding the whole upload in memory.
+	pub instances: BoxStream<'static, Result<FileDicomObject<InMemDicomObject>, StoreError>>,
 }
 
 /// <https://dicom.nema.org/medical/dicom/current/output/html/part03.html#table_10-11>
@@ -91,8 +94,10 @@ pub trait StowService: Sync + Send {
 
 #[derive(Debug, Error)]
 pub enum StoreError {
-	#[error("The file exceeds the configured upload size limit")]
+	#[error("The request exceeds the configured upload size limit")]
 	UploadLimitExceeded,
+	#[error("A part of the request exceeds the configured part size limit of {limit} bytes")]
+	PartLimitExceeded { limit: u64 },
 	#[error(transparent)]
 	Stream(multer::Error),
 	#[error(transparent)]
@@ -105,6 +110,12 @@ impl IntoResponse for StoreError {
 			Self::UploadLimitExceeded => Response::builder()
 				.status(StatusCode::PAYLOAD_TOO_LARGE)
 				.body(Body::from("Upload limit exceeded"))
+				.unwrap(),
+			Self::PartLimitExceeded { limit } => Response::builder()
+				.status(StatusCode::PAYLOAD_TOO_LARGE)
+				.body(Body::from(format!(
+					"Part limit exceeded: each instance must not exceed {limit} bytes"
+				)))
 				.unwrap(),
 			Self::Stream(err) => Response::builder()
 				.status(StatusCode::BAD_REQUEST)
@@ -122,6 +133,10 @@ impl IntoResponse for StoreError {
 
 impl From<multer::Error> for StoreError {
 	fn from(error: multer::Error) -> Self {
+		if let multer::Error::FieldSizeExceeded { limit, .. } = error {
+			return Self::PartLimitExceeded { limit };
+		}
+
 		if let multer::Error::StreamReadFailed(stream_error) = &error {
 			let is_limit_exceeded = stream_error
 				.downcast_ref::<axum::Error>()

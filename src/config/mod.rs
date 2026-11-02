@@ -291,6 +291,7 @@ pub struct HttpServerConfig {
 	pub interface: IpAddr,
 	pub port: u16,
 	pub max_upload_size: usize,
+	pub max_part_size: usize,
 	pub request_timeout: u64,
 	pub graceful_shutdown: bool,
 	pub base_path: String,
@@ -322,8 +323,9 @@ impl Default for HttpServerConfig {
 			interface: IpAddr::from([0, 0, 0, 0]),
 			port: 8080,
 			graceful_shutdown: true,
-			max_upload_size: 50_000_000, // 50 MB
-			request_timeout: 60_000,     // 1 min
+			max_upload_size: 5_000_000_000, // 5 GB
+			max_part_size: 50_000_000,      // 50 MB
+			request_timeout: 60_000,        // 1 min
 			base_path: String::from("/"),
 		}
 	}
