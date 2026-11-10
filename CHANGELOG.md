@@ -9,9 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- STOW-RS (DIMSE backend) additionally offers the uncompressed transfer syntaxes and decompresses instances if the PACS does not accept their transfer syntax (#83). Can be disabled with `stow-rs.uncompressed-fallback: false`.
+- JPEG 2000 and JPEG-LS pixel data can now be decoded, e.g. when transcoding WADO-RS responses. Building from source requires a C++ compiler and CMake.
+- STOW-RS responses include a `FailureReason` for each failed instance.
+
 ### Changed
 
+- STOW-RS responds with `202 Accepted` if some instances failed and with `409 Conflict` if all instances failed, instead of `200 OK`.
+- Failures to store an instance are logged as warnings.
+
 ### Fixed
+
+- STOW-RS (DIMSE backend) no longer reports an instance as stored if the PACS returned a failure status in the C-STORE-RSP.
 
 ## [0.3.4] - 2026-10-27
 

@@ -1,4 +1,8 @@
 FROM lukemathwalker/cargo-chef:latest-rust-1.94.1 AS chef
+# cmake builds CharLS (JPEG-LS codec)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cmake \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 FROM chef AS planner

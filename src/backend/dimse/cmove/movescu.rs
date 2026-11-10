@@ -32,6 +32,7 @@ impl MoveServiceClassUser {
 					uids::STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_MOVE,
 				),
 				transfer_syntax_uids: vec![UI::from(uids::IMPLICIT_VR_LITTLE_ENDIAN)],
+				fallback_transfer_syntax_uids: vec![],
 			})
 			.await?;
 

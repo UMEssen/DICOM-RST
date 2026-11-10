@@ -56,16 +56,19 @@ impl FindServiceClassUser {
 					uids::STUDY_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND,
 				),
 				transfer_syntax_uids,
+				fallback_transfer_syntax_uids: vec![],
 			},
 			QueryInformationModel::Patient => PresentationParameter {
 				abstract_syntax_uid: String::from(
 					uids::PATIENT_ROOT_QUERY_RETRIEVE_INFORMATION_MODEL_FIND,
 				),
 				transfer_syntax_uids,
+				fallback_transfer_syntax_uids: vec![],
 			},
 			QueryInformationModel::Worklist => PresentationParameter {
 				abstract_syntax_uid: String::from(uids::MODALITY_WORKLIST_INFORMATION_MODEL_FIND),
 				transfer_syntax_uids,
+				fallback_transfer_syntax_uids: vec![],
 			},
 		};
 

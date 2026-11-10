@@ -75,6 +75,7 @@ where
 					stow: Some(Box::new(DimseStowService::new(
 						pool.to_owned(),
 						Duration::from_millis(ae_config.stow.timeout),
+						ae_config.stow.uncompressed_fallback,
 					))),
 					mwl: Some(Box::new(DimseMwlService::new(
 						pool.to_owned(),

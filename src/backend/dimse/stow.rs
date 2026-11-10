@@ -15,8 +15,12 @@ pub struct DimseStowService {
 }
 
 impl DimseStowService {
-	pub const fn new(pool: AssociationPool, timeout: Duration) -> Self {
-		let storescu = StoreServiceClassUser::new(pool, timeout);
+	pub const fn new(
+		pool: AssociationPool,
+		timeout: Duration,
+		uncompressed_fallback: bool,
+	) -> Self {
+		let storescu = StoreServiceClassUser::new(pool, timeout, uncompressed_fallback);
 		Self { storescu }
 	}
 }

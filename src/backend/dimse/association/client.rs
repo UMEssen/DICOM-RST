@@ -24,6 +24,8 @@ pub struct ClientAssociationOptions {
 	pub called_aet: String,
 	pub abstract_syntax: String,
 	pub transfer_syntaxes: Vec<String>,
+	/// Proposed in a separate presentation context for the same abstract syntax, if not empty.
+	pub fallback_transfer_syntaxes: Vec<String>,
 	pub address: SocketAddr,
 }
 
@@ -68,10 +70,17 @@ impl ClientAssociation {
 		let called_aet = options.called_aet;
 		let address = options.address;
 
-		let options = dicom::ul::ClientAssociationOptions::new()
+		let mut ul_options = dicom::ul::ClientAssociationOptions::new()
 			.calling_ae_title(calling_aet.clone())
 			.called_ae_title(called_aet.clone())
-			.with_presentation_context(options.abstract_syntax, options.transfer_syntaxes);
+			.with_presentation_context(options.abstract_syntax.clone(), options.transfer_syntaxes);
+		if !options.fallback_transfer_syntaxes.is_empty() {
+			ul_options = ul_options.with_presentation_context(
+				options.abstract_syntax,
+				options.fallback_transfer_syntaxes,
+			);
+		}
+		let options = ul_options;
 
 		let _handle = thread::Builder::new()
 			.name(String::from("calling_aet"))

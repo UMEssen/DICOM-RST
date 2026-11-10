@@ -209,18 +209,27 @@ pub struct AssociationManager {
 	pub called_aet: String,
 }
 
+#[derive(Debug)]
 pub struct PresentationParameter {
 	pub abstract_syntax_uid: UI,
 	pub transfer_syntax_uids: Vec<UI>,
+	/// Transfer syntaxes proposed in a separate presentation context for the same abstract syntax.
+	/// The peer may accept either context, so the caller has to pick the one to use.
+	/// Empty if no fallback should be proposed.
+	pub fallback_transfer_syntax_uids: Vec<UI>,
 }
 
 impl PartialEq for PresentationParameter {
 	fn eq(&self, other: &Self) -> bool {
+		// The fallback must match exactly: if the peer only accepted the fallback context of
+		// an association, it must not be reused for another (preferred) transfer syntax that
+		// the peer might support.
 		self.abstract_syntax_uid == other.abstract_syntax_uid
 			&& self
 				.transfer_syntax_uids
 				.iter()
 				.any(|ts| other.transfer_syntax_uids.contains(ts))
+			&& self.fallback_transfer_syntax_uids == other.fallback_transfer_syntax_uids
 	}
 }
 
@@ -238,6 +247,7 @@ impl Manager for AssociationManager {
 			called_aet: self.called_aet.clone(),
 			abstract_syntax: param.abstract_syntax_uid.clone(),
 			transfer_syntaxes: param.transfer_syntax_uids.clone(),
+			fallback_transfer_syntaxes: param.fallback_transfer_syntax_uids.clone(),
 			address: self.address,
 		};
 
@@ -335,5 +345,42 @@ impl AssociationPools {
 	#[inline]
 	pub fn aets(&self) -> impl Iterator<Item = &String> {
 		self.0.keys()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use dicom::dictionary_std::uids;
+
+	fn parameter(transfer_syntax: &str, fallback: &[&str]) -> PresentationParameter {
+		PresentationParameter {
+			abstract_syntax_uid: UI::from(uids::CT_IMAGE_STORAGE),
+			transfer_syntax_uids: vec![UI::from(transfer_syntax)],
+			fallback_transfer_syntax_uids: fallback.iter().copied().map(UI::from).collect(),
+		}
+	}
+
+	#[test]
+	fn presentation_parameters_with_different_fallbacks_are_not_equal() {
+		let fallback = [
+			uids::EXPLICIT_VR_LITTLE_ENDIAN,
+			uids::IMPLICIT_VR_LITTLE_ENDIAN,
+		];
+
+		assert_eq!(
+			parameter(uids::JPEG_LOSSLESS_SV1, &fallback),
+			parameter(uids::JPEG_LOSSLESS_SV1, &fallback)
+		);
+		// An association that only got the fallback accepted must not be reused for
+		// another transfer syntax that the peer might accept.
+		assert_ne!(
+			parameter(uids::JPEG_LOSSLESS_SV1, &fallback),
+			parameter(uids::JPEG2000_LOSSLESS, &fallback)
+		);
+		assert_ne!(
+			parameter(uids::JPEG_LOSSLESS_SV1, &fallback),
+			parameter(uids::JPEG_LOSSLESS_SV1, &[])
+		);
 	}
 }

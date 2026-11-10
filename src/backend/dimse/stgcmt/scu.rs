@@ -59,6 +59,7 @@ impl StorageCommitmentServiceClassUser {
 			.get(PresentationParameter {
 				abstract_syntax_uid: UI::from(uids::STORAGE_COMMITMENT_PUSH_MODEL),
 				transfer_syntax_uids: vec![UI::from(uids::IMPLICIT_VR_LITTLE_ENDIAN)],
+				fallback_transfer_syntax_uids: vec![],
 			})
 			.await?;
 

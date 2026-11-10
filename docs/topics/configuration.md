@@ -205,6 +205,7 @@ aets:
       timeout: 3000
     stow-rs:
       timeout: 3000
+      uncompressed-fallback: true
 ```
 
 Each AET (regardless of the backend) has additional settings specific to the DICOMweb endpoints.
@@ -243,6 +244,15 @@ Each AET (regardless of the backend) has additional settings specific to the DIC
     How many milliseconds to wait until a STOW-RS request should time out.
     This is the timeout for a single operation (e.g. receiving a DIMSE-C response primitive).
     If you want to set a timeout for the total execution time, use the <code>server.http.request-timeout</code> option instead.
+    </def>
+    <def title="stow-rs.uncompressed-fallback" id="dicomweb.stow-rs.uncompressed-fallback">
+    <b>DIMSE-backend only:</b>
+    Whether to also offer the uncompressed transfer syntaxes (Explicit and Implicit VR Little Endian) when storing an instance.
+    Instances are sent in their original transfer syntax whenever the PACS accepts it.
+    If the PACS only accepts the uncompressed transfer syntaxes, the instance is decompressed before sending it.
+    Supported compressions are JPEG, JPEG Lossless, JPEG-LS, JPEG 2000 and RLE.
+    If disabled, instances in a transfer syntax that the PACS does not accept fail to store.
+    Defaults to <code>true</code>.
     </def>
 </deflist>
 

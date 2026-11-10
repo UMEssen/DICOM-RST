@@ -34,12 +34,14 @@ pub struct FailedInstance {
 }
 
 /// Failure Reason values of the Store Instances Response Module.
-/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/chapter_I.html>
+/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_I.2.2.html>
 pub mod failure_reason {
 	use crate::types::US;
 
 	/// The origin server failed to store the instance for an unspecified reason.
 	pub const PROCESSING_FAILURE: US = 0x0110;
+	/// The transfer syntax of the instance is not supported.
+	pub const TRANSFER_SYNTAX_NOT_SUPPORTED: US = 0xC122;
 }
 
 #[derive(Debug, Default)]
