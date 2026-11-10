@@ -3,7 +3,7 @@ use crate::backend::dimse::cmove::{
 	MediatorError, MoveMediator, MoveSubOperation, SubscriptionTopic,
 };
 use crate::backend::dimse::cstore::{
-	CompositeStoreResponse, COMMAND_FIELD_COMPOSITE_STORE_REQUEST,
+	CompositeStoreResponse, COMMAND_FIELD_COMPOSITE_STORE_REQUEST, STATUS_SUCCESS,
 };
 use crate::backend::dimse::stgcmt::store::StorageCommitmentStore;
 use crate::backend::dimse::stgcmt::{handle_event_report, COMMAND_FIELD_N_EVENT_REPORT_REQUEST};
@@ -181,6 +181,7 @@ impl StoreServiceClassProvider {
 			sop_instance_uid: UI::from(sop_instance_uid.clone()),
 			sop_class_uid: UI::from(sop_class_uid.clone()),
 			message_id,
+			status: STATUS_SUCCESS,
 		};
 
 		let move_originator_id = message

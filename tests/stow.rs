@@ -105,12 +105,11 @@ async fn does_not_leak_semaphore_permits_if_association_is_rejected() -> anyhow:
 
 	with_test_environment(config, async |client| {
 		let start = Instant::now();
-		let response = client
+		let result = client
 			.store_instances()
 			.with_instances(futures::stream::iter(instances))
 			.run()
-			.await
-			.context("STOW-RS request failed")?;
+			.await;
 
 		let elapsed = start.elapsed();
 		assert!(
@@ -118,15 +117,72 @@ async fn does_not_leak_semaphore_permits_if_association_is_rejected() -> anyhow:
 			"STOW-RS took {elapsed:?}; expected fast failure"
 		);
 
-		let failed_sequence = response
-			.element(tags::FAILED_SOP_SEQUENCE)
-			.context("STOW-RS response is missing FailedSOPSequence")?;
+		// No instance was stored, so the request fails as a whole.
 		assert!(
-			failed_sequence
-				.items()
-				.is_some_and(|items| items.len() == 3),
-			"All three rejected instances should appear in FailedSOPSequence"
+			matches!(
+				result,
+				Err(DicomWebError::HttpStatusFailure {
+					status_code: StatusCode::CONFLICT
+				})
+			),
+			"Expected 409 Conflict, got {result:?}"
 		);
+
+		Ok(())
+	})
+	.await
+}
+
+#[tokio::test]
+async fn returns_failure_reason_if_some_instances_fail() -> anyhow::Result<()> {
+	let config = "
+        server:
+          http:
+            port: 0
+          dimse:
+            - aet: DICOM-RST
+              interface: 0.0.0.0
+              port: 0
+        aets:
+          - aet: ORTHANC
+            host: 127.0.0.1
+            port: ${ORTHANC_PORT}
+            backend: DIMSE
+	";
+
+	let valid = open_file(dicom_test_files::path("pydicom/CT_small.dcm").unwrap()).unwrap();
+	let mut invalid = valid.clone();
+	// Set a fake SOPClassUID; Orthanc will reject the association for this instance
+	invalid.meta_mut().media_storage_sop_class_uid = String::from("1.2.3.4.5.6.7.8.9.10");
+
+	with_test_environment(config, async |client| {
+		let response = client
+			.store_instances()
+			.with_instances(futures::stream::iter([valid, invalid]))
+			.run()
+			.await
+			.context("STOW-RS request failed")?;
+
+		let referenced_items = response
+			.element(tags::REFERENCED_SOP_SEQUENCE)
+			.context("STOW-RS response is missing ReferencedSOPSequence")?
+			.items()
+			.context("ReferencedSOPSequence is not a sequence")?;
+		assert_eq!(referenced_items.len(), 1);
+
+		let failed_items = response
+			.element(tags::FAILED_SOP_SEQUENCE)
+			.context("STOW-RS response is missing FailedSOPSequence")?
+			.items()
+			.context("FailedSOPSequence is not a sequence")?;
+		assert_eq!(failed_items.len(), 1);
+
+		let failure_reason = failed_items[0]
+			.element(tags::FAILURE_REASON)
+			.context("FailedSOPSequence item is missing FailureReason")?
+			.to_int::<u16>()?;
+		// Processing failure, as the reason for the rejected association is not known
+		assert_eq!(failure_reason, 0x0110);
 
 		Ok(())
 	})

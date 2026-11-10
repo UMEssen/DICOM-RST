@@ -1,4 +1,6 @@
-use crate::api::stow::{InstanceReference, StoreError, StoreRequest, StoreResponse, StowService};
+use crate::api::stow::{
+	FailedInstance, InstanceReference, StoreError, StoreRequest, StoreResponse, StowService,
+};
 use crate::backend::dimse::association;
 use crate::backend::dimse::cstore::storescu::StoreServiceClassUser;
 use crate::types::UI;
@@ -6,7 +8,7 @@ use association::pool::AssociationPool;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use std::time::Duration;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct DimseStowService {
 	storescu: StoreServiceClassUser,
@@ -40,10 +42,13 @@ impl StowService for DimseStowService {
 					});
 				}
 				Err(err) => {
-					info!(sop_instance_uid, "Failed to store instance: {err}",);
-					failed_sequence.push(InstanceReference {
-						sop_class_uid,
-						sop_instance_uid,
+					warn!(sop_instance_uid, "Failed to store instance: {err}");
+					failed_sequence.push(FailedInstance {
+						reference: InstanceReference {
+							sop_class_uid,
+							sop_instance_uid,
+						},
+						failure_reason: err.failure_reason(),
 					});
 				}
 			}
