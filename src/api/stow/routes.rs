@@ -63,10 +63,11 @@ async fn studies(
 		instances: receiver.boxed(),
 	};
 	let response = stow.store(request).await?;
+	let status = response.status_code();
 	let json = DicomJson::from(InMemDicomObject::from(response));
 
 	Ok(Response::builder()
-		.status(StatusCode::OK)
+		.status(status)
 		.header(CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
 		.body(Body::from(serde_json::to_string(&json).unwrap()))
 		.unwrap())

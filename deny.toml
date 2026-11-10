@@ -7,6 +7,7 @@ unsound = "all"
 ignore = [
     { id = "RUSTSEC-2021-0153", reason = "encoding is used by dicom-encoding (dicom-rs); no maintained replacement upstream yet" },
     { id = "RUSTSEC-2024-0436", reason = "paste is used by rav1e (image, via dicom-pixeldata); proc-macro only" },
+    { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is used by testcontainers (dev-dependency only); no testcontainers release without it yet" },
 ]
 
 [licenses]

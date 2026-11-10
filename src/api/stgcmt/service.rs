@@ -1,5 +1,6 @@
+pub use crate::api::stow::FailedInstance;
 use crate::api::stow::InstanceReference;
-use crate::types::{UI, US};
+use crate::types::UI;
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Response, StatusCode};
@@ -104,13 +105,6 @@ fn items(item: &InMemDicomObject, tag: Tag) -> Result<&[InMemDicomObject], Commi
 pub struct InstanceLocation {
 	pub study_instance_uid: UI,
 	pub series_instance_uid: UI,
-}
-
-/// An instance for which storage has not been committed.
-#[derive(Debug, Clone)]
-pub struct FailedInstance {
-	pub reference: InstanceReference,
-	pub failure_reason: US,
 }
 
 /// The result of a storage commitment request, once known.
