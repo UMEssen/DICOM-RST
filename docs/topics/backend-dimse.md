@@ -127,6 +127,15 @@ sequenceDiagram
     end
 ```
 
+Each instance is offered in its own transfer syntax and, unless
+[`stow-rs.uncompressed-fallback`](configuration.md#dicomweb.stow-rs.uncompressed-fallback) is disabled,
+additionally in the uncompressed transfer syntaxes.
+If the PACS does not accept the original transfer syntax, the instance is decompressed before sending it.
+
+Instances that could not be stored are listed in the `FailedSOPSequence` of the response.
+The `FailureReason` contains the status of the C-STORE-RSP, `0xC122` if the instance could not be
+converted to an accepted transfer syntax, or `0x0110` for other errors (e.g. a rejected association).
+
 ### Resources
 
 | Resource | URI Template       | Support Status |

@@ -1,4 +1,4 @@
-use crate::types::UI;
+use crate::types::{UI, US};
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::{Response, StatusCode};
@@ -25,10 +25,47 @@ pub struct InstanceReference {
 	pub sop_instance_uid: UI,
 }
 
+/// An instance that could not be stored, along with the reason.
+#[derive(Debug, Clone)]
+pub struct FailedInstance {
+	pub reference: InstanceReference,
+	/// Failure Reason (0008,1197)
+	pub failure_reason: US,
+}
+
+/// Failure Reason values of the Store Instances Response Module.
+/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_I.2.2.html>
+pub mod failure_reason {
+	use crate::types::US;
+
+	/// The origin server failed to store the instance for an unspecified reason.
+	pub const PROCESSING_FAILURE: US = 0x0110;
+	/// The transfer syntax of the instance is not supported.
+	pub const TRANSFER_SYNTAX_NOT_SUPPORTED: US = 0xC122;
+}
+
 #[derive(Debug, Default)]
 pub struct StoreResponse {
-	pub failed_sequence: Vec<InstanceReference>,
+	pub failed_sequence: Vec<FailedInstance>,
 	pub referenced_sequence: Vec<InstanceReference>,
+}
+
+impl StoreResponse {
+	/// The HTTP status code of the response.
+	/// <https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.5.3.html>
+	pub const fn status_code(&self) -> StatusCode {
+		match (
+			self.referenced_sequence.is_empty(),
+			self.failed_sequence.is_empty(),
+		) {
+			// Some instances failed, others were stored.
+			(false, false) => StatusCode::ACCEPTED,
+			// No instance was stored.
+			(true, false) => StatusCode::CONFLICT,
+			// Every instance was stored (or there was nothing to store).
+			(_, true) => StatusCode::OK,
+		}
+	}
 }
 
 impl From<StoreResponse> for InMemDicomObject {
@@ -69,12 +106,17 @@ impl From<StoreResponse> for InMemDicomObject {
 				DataElement::new(
 					tags::REFERENCED_SOP_INSTANCE_UID,
 					VR::UI,
-					dicom_value!(Str, failed.sop_instance_uid),
+					dicom_value!(Str, failed.reference.sop_instance_uid),
 				),
 				DataElement::new(
 					tags::REFERENCED_SOP_CLASS_UID,
 					VR::UI,
-					dicom_value!(Str, failed.sop_class_uid),
+					dicom_value!(Str, failed.reference.sop_class_uid),
+				),
+				DataElement::new(
+					tags::FAILURE_REASON,
+					VR::US,
+					dicom_value!(U16, [failed.failure_reason]),
 				),
 			]);
 			failed_items.push(item);
@@ -150,5 +192,65 @@ impl From<multer::Error> for StoreError {
 		}
 
 		Self::Stream(error)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn reference() -> InstanceReference {
+		InstanceReference {
+			sop_class_uid: UI::from("1.2.840.10008.5.1.4.1.1.2"),
+			sop_instance_uid: UI::from("1.2.3"),
+		}
+	}
+
+	fn failed() -> FailedInstance {
+		FailedInstance {
+			reference: reference(),
+			failure_reason: failure_reason::PROCESSING_FAILURE,
+		}
+	}
+
+	#[test]
+	fn status_code_reflects_stored_and_failed_instances() {
+		let response = |referenced_sequence, failed_sequence| StoreResponse {
+			failed_sequence,
+			referenced_sequence,
+		};
+
+		assert_eq!(
+			response(vec![reference()], vec![]).status_code(),
+			StatusCode::OK
+		);
+		assert_eq!(
+			response(vec![reference()], vec![failed()]).status_code(),
+			StatusCode::ACCEPTED
+		);
+		assert_eq!(
+			response(vec![], vec![failed()]).status_code(),
+			StatusCode::CONFLICT
+		);
+		assert_eq!(response(vec![], vec![]).status_code(), StatusCode::OK);
+	}
+
+	#[test]
+	fn failed_sequence_contains_failure_reason() {
+		let object = InMemDicomObject::from(StoreResponse {
+			failed_sequence: vec![failed()],
+			referenced_sequence: vec![],
+		});
+
+		let items = object
+			.element(tags::FAILED_SOP_SEQUENCE)
+			.unwrap()
+			.items()
+			.unwrap();
+		let failure_reason = items[0]
+			.element(tags::FAILURE_REASON)
+			.unwrap()
+			.to_int::<US>();
+		assert_eq!(failure_reason.unwrap(), failure_reason::PROCESSING_FAILURE);
 	}
 }

@@ -177,11 +177,24 @@ pub enum RetrieveMode {
 #[serde(rename_all = "kebab-case")]
 pub struct StowConfig {
 	pub timeout: u64,
+	/// Additionally offer the uncompressed transfer syntaxes when storing an instance.
+	/// If the peer does not accept the transfer syntax of the instance, it is transcoded.
+	#[serde(default = "StowConfig::default_uncompressed_fallback")]
+	pub uncompressed_fallback: bool,
+}
+
+impl StowConfig {
+	pub const fn default_uncompressed_fallback() -> bool {
+		true
+	}
 }
 
 impl Default for StowConfig {
 	fn default() -> Self {
-		Self { timeout: 30_000 }
+		Self {
+			timeout: 30_000,
+			uncompressed_fallback: Self::default_uncompressed_fallback(),
+		}
 	}
 }
 

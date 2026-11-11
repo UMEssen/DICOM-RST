@@ -9,14 +9,46 @@ use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdout, Command};
 
-pub async fn spawn_orthanc() -> anyhow::Result<ContainerAsync<GenericImage>> {
+fn orthanc_image() -> GenericImage {
 	GenericImage::new("jodogne/orthanc", "latest")
 		.with_exposed_port(4242.tcp())
 		.with_exposed_port(8042.tcp())
 		.with_wait_for(WaitFor::message_on_stderr("Orthanc has started"))
+}
+
+pub async fn spawn_orthanc() -> anyhow::Result<ContainerAsync<GenericImage>> {
+	orthanc_image()
 		// Allows the Orthanc container to dial back into a DICOM-RST process running on the
 		// test host, e.g. to deliver a Storage Commitment N-EVENT-REPORT-RQ.
 		.with_host("host.docker.internal", Host::HostGateway)
+		.start()
+		.await
+		.context("failed to start Orthanc container")
+}
+
+/// Starts Orthanc with the given configuration, which replaces the default `orthanc.json`
+/// of the image. The REST API is reachable with the credentials orthanc:orthanc.
+pub async fn spawn_orthanc_with_config(
+	config: &serde_json::Value,
+) -> anyhow::Result<ContainerAsync<GenericImage>> {
+	let mut config = config.clone();
+	let defaults = serde_json::json!({
+		"Name": "Orthanc inside Docker",
+		"StorageDirectory": "/var/lib/orthanc/db",
+		"RemoteAccessAllowed": true,
+		"AuthenticationEnabled": true,
+		"RegisteredUsers": { "orthanc": "orthanc" },
+	});
+	for (key, value) in defaults.as_object().expect("defaults are an object") {
+		config
+			.as_object_mut()
+			.context("Orthanc configuration must be an object")?
+			.entry(key)
+			.or_insert_with(|| value.clone());
+	}
+
+	orthanc_image()
+		.with_copy_to("/etc/orthanc/orthanc.json", serde_json::to_vec(&config)?)
 		.start()
 		.await
 		.context("failed to start Orthanc container")
